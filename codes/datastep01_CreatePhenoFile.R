@@ -1,5 +1,5 @@
-# Phenofile
-# Keep IDs available in both ltg_all and imputed files.
+# Create phenofile with genetics data
+# Use phenofile created from raw data
 
 setwd("..")
 # install.packages("openxlsx")
