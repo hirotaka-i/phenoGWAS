@@ -34,8 +34,8 @@ for(i in 1:length(COHORTs)){
   COVs_i = temp %>% filter(V1>0) %>% select(NAMES) %>% t %>% as.vector # filter out NA or Var=0
   cov_new = cov %>% select(FID, IID, FATID, MATID, COVs_i)
   COVs_i_woSex = setdiff(COVs_i, "SEX")
-  write.table(pheno, paste("outputs/rvtest/", COHORTs[i], ".pheno", sep = ""), row.names = F, quote = F)
-  write.table(cov_new, paste("outputs/rvtest/", COHORTs[i], ".cov", sep = ""), row.names = F, quote = F)
+  write.table(pheno, paste("outputs/rvtest/", COHORTs[i], ".pheno", sep = ""), row.names = F, quote = F, sep = "\t")
+  write.table(cov_new, paste("outputs/rvtest/", COHORTs[i], ".cov", sep = ""), row.names = F, quote = F, sep = "\t")
   write.table(IDs, paste("outputs/rvtest/", COHORTs[i], ".id", sep = ""), row.names = F, quote = F)
   COVs_set[i,] = paste(COHORTs[i], paste(COVs_i_woSex, collapse = ","), sep=":")
 }

@@ -34,6 +34,11 @@ for item in $(tail -n +2 outputs/rvtest/COVsSet.txt);do
 	dataset=$(echo $item | cut -d ":" -f 1);
 	sbatch --cpus-per-task=20 --mem=40g --time=8:00:00 PlinkPC5withCov.sh $dataset;
 done;
+## IDs in covPC files should be changed to the plinkr imputed data format.
+### WARNING!! Resulting file names *.covPC are the same as the pre-converted file.
+### So check if the file have already converted or not before running this. 
+Rscript datastep04_IDconv.R
+
 
 
 # rvtest for binomial outcomes
