@@ -19,8 +19,8 @@ if(length(args)==0){
     da <- dat[,c("SNP","ALT_Frq","Rsq")]
     da1 <- dat[,c("range")]
     LABEL = paste("_maf", substr(MAF_thres,3,nchar(MAF_thres)), "rsq0", substr(RSQ_thres, 3, nchar(RSQ_thres)), "_chr", sep = "")
-    write.table(da, paste("/data/LNG/Hirotaka/progGWAS/", COHORT, LABEL, i, ".info",sep = ""), row.names = F, quote = F, sep = "\t")
-    write.table(da1, paste("/data/LNG/Hirotaka/progGWAS/", COHORT, LABEL, i, ".txt",sep = ""), col.names = F, row.names = F, quote = F, sep = "\t")
+    write.table(da, paste("/data/LNG/Hirotaka/progGWAS/SNPfilter", COHORT, LABEL, i, ".info",sep = ""), row.names = F, quote = F, sep = "\t")
+    write.table(da1, paste("/data/LNG/Hirotaka/progGWAS/SNPfilter", COHORT, LABEL, i, ".txt",sep = ""), col.names = F, row.names = F, quote = F, sep = "\t")
   }
 }
 
