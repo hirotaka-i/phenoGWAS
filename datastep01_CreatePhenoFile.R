@@ -152,7 +152,12 @@ for(i in 1:length(COHORTs)){
   for (j in (1:length(BinomT))){
     ltg = ltg_all %>% filter(COHORT == COHORTs[i])
     ltg$OUTCOME = ltg[,BinomT[j]]
-    ltg = ltg %>% select(ID, TSTART, OUTCOME, COVs_i)
+    
+    cov2in = ltg %>% select(COVs) %>% summarise_all(funs(var(.,na.rm = T))) %>% t %>% as.data.frame
+    cov2in$NAMES = rownames(cov2in) # rownames were converted to the covariates.
+    COVs2in =  cov2in %>% filter(V1>0) %>% select(NAMES) %>% t %>% as.vector # filter out NA outcomes and Var=0 outcomes
+
+    ltg = ltg %>% select(ID, TSTART, OUTCOME, COVs2in)
     time2follow = ltg %>%
       arrange(TSTART) %>%
       filter(!is.na(OUTCOME)) %>%
@@ -181,7 +186,7 @@ for(i in 1:length(COHORTs)){
     
     if(nrow(cohort)!=0 & var(cohort$OUTCOME, na.rm = T) != 0){
       cohort %>% left_join(., PC, by = c("ID" = "IID")) %>% 
-      write.table(., paste("outputs/surv/", BinomT[j], ".", COHORTs[i], ".surv", sep = ""), row.names = F, quote = F, sep = "\t")
+        write.table(., paste("outputs/surv/", BinomT[j], ".", COHORTs[i], ".surv", sep = ""), row.names = F, quote = F, sep = "\t")
       PHENOSURV = c(PHENOSURV, BinomT[j])
     }
   }
