@@ -1,115 +1,57 @@
 # Cox model for GWAS
-
 library(data.table)
 library(dplyr)
 library(zoo)
 library(survival)
 library(parallel)
+
+
+# Create temp data
+temp =data.frame(ID = paste(1:5000, 1:5000, sep="_"))
+temp[, 2:10001] = rnorm(5000*10000, 0, 1)
+write.table(temp, "temp.txt", row.names = F, quote = F, sep = "\t")
+
+
+
+
 # Read data
-ltg_all=fread('outputs/PhenoFile.csv') %>% data.frame
-names(ltg_all)
+FILES = list.files("outputs/surv/",full.names = T)
+EVAL = data.table(NAME = as.character(FILES))
+EVAL$STUDY = lapply(strsplit(FILES, "\\."), "[", 2) %>% unlist
+EVAL$OUTCOME = lapply(strsplit(FILES, "\\."), "[",1) %>% unlist %>% substring(., 15)
+EVAL = EVAL %>% arrange(STUDY, OUTCOME)
+DATASETs= unique(EVAL$STUDY)
 
-# Factors
-PCs = c("PC1", "PC2")
-COVs = c("ID", 'FEMALE', 'YEARSEDUC', "FAMILY_HISTORY", 'AAO', "BLDfDIAG",  'DOPA', 'AGONIST', "TSTART")
-OUTCOMEs = c('HYPOSMIA', 'DEMENTIA', 'MOTORFLUX', 'DYSKINESIAS', 'DEPR', 'RL', 'CONST', 'RBD', 'SLEEP', 'INS', 'HY3')
-COHORTs = unique(ltg_all$COHORT)
-N_VARS = 2 + length(c(Covs, BasicT, BinomT, PCs))
-PREDICTORs = paste("X", 1:100, sep = "")
-#######################################################################
-# models specifications
-COHORTs
-MODELs = data.frame(
-  COHORT = COHORTs,
-  MODEL = c(
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2 + DOPA + AGONIST + FEMALE + YEARSEDUC + FAMILY_HISTORY + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2                  + FEMALE + YEARSEDUC + FAMILY_HISTORY + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2                  + FEMALE             + FAMILY_HISTORY + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2                  + FEMALE                              + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2 + DOPA + AGONIST + FEMALE + YEARSEDUC + FAMILY_HISTORY + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2 + DOPA + AGONIST + FEMALE + YEARSEDUC + FAMILY_HISTORY + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2 + DOPA + AGONIST + FEMALE + YEARSEDUC + FAMILY_HISTORY + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2 + DOPA + AGONIST + FEMALE + YEARSEDUC + FAMILY_HISTORY + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2 + DOPA + AGONIST + FEMALE + YEARSEDUC + FAMILY_HISTORY + AAO + BLDfDIAG",
-    "SurvObj1 ~ PREDICTOR + PC1 + PC2 + DOPA + AGONIST + FEMALE + YEARSEDUC + FAMILY_HISTORY + AAO + BLDfDIAG"
-    )
-)
-MODELs
-
-# Another way is to replace missing covariates with the same value like "MISS"
-ncol(ltg_all)
-
-# For test
-ltg_all = ltg_all %>% mutate(PC1 = rnorm(nrow(ltg_all), 0, 1), 
-                             PC2 = rnorm(nrow(ltg_all), 0, 1))
-ltg_all[,42:141] = rnorm(nrow(ltg_all)*100, 0, 1)
-
-PREDICTORs = paste("V", 42:141, sep = "")
-# Survival Analaysis
-GRID = expand.grid(1:length(OUTCOMEs), 1:length(PREDICTORs))
-cox.stats.func <- function(x){
-  STUDY = COHORTs[i]
-  OUTCOME = OUTCOMEs[GRID[x,1]]
-  PREDICTOR = PREDICTORs[GRID[x,2]]
-  # print(paste(i, x, STUDY, OUTCOME, PREDICTOR))
-  ltg = ltg_all %>% filter(COHORT == STUDY)
-  ltg$OUTCOME = ltg[,OUTCOME]
-  ltg$PREDICTOR = ltg[,PREDICTOR]
-  ltg = ltg %>% select(OUTCOME, PREDICTOR, COVs, PCs)
-  time2follow = ltg %>%
-    arrange(TSTART) %>%
-    filter(!is.na(OUTCOME)) %>%
-    group_by(ID, .keep_all = T) %>%
-    mutate(BEGIN = first(TSTART),
-           END = last(TSTART)) %>% # BEGIN and END are identical within each ID
-    mutate(END = ifelse(OUTCOME==1, TSTART, END)) %>% # If 1, then END will be updated
-    data.frame %>%
-    arrange(END) %>% 
-    distinct(ID, .keep_all = T) %>%  # take the smallest END
-    select(ID, BEGIN, END)
+for (i in 1:length(DATASETs)){ # iterate cohort
+  SET = EVAL %>% filter(STUDY == DATASETs[i])
   
-  cohort_by_first_event = left_join(ltg, time2follow, by = 'ID') %>%
-    filter(BEGIN <= TSTART & TSTART <= END) %>% # filter observation between BEGIN and END
-    mutate(OUTCOME = ifelse(is.na(OUTCOME), 0, OUTCOME)) # NAs in the period replaced by 0
+  # read SNP data
+  t = Sys.time()
+  SNPset = fread("temp.txt")
+  SNPs = names(SNPset)[2:ncol(SNPset)]
   
-  cohort = cohort_by_first_event %>% 
-    arrange(TSTART) %>% 
-    group_by(ID) %>%
-    mutate(BLDfDIAG = BLDfDIAG + TSTART/365.25, # Follow-up starts TSTART > 0 sometimes, Needs update
-           TSTART = TSTART - first(TSTART)) %>% # New baseline set 0 (Especially, ParkWest)
-    mutate(TSTOP = lead(TSTART), # The TSTART[i+1] will be the stop time
-           OUTCOME = lead(OUTCOME)) %>%  # the OUTCOME is updated by the one at the stop time
-    mutate(TSTOP = ifelse(is.na(TSTOP), END, TSTOP)) %>% # replace the 
-    data.frame %>% arrange(ID, TSTART) %>% 
-    filter(!is.na(OUTCOME)) # the basially last follow-up data will be erased (Right censored)
-  if(nrow(cohort)==0){
-    sumstat <- cbind(STUDY, OUTCOME, PREDICTOR, "NoData", "NoData", "NoData", "NoData", "NoData")
-  }else if(var(cohort$OUTCOME, na.rm = T) == 0 | var(cohort$PREDICTOR, na.rm = T) == 0){
-    sumstat <- cbind(STUDY, OUTCOME, PREDICTOR, "NoVar", "NoVar", "NoVar", "NoVar", "NoVar")
-  }else{
-    cohort$SurvObj1 = with(cohort, Surv(TSTART, TSTOP, OUTCOME == 1))
-    testCox = try(coxph(eval(parse(text = paste(MODELs[i,2]))), data = cohort),silent = T)
-    # Some can't converge by REML so use alternative method
-    if(class(testCox)[1]=='try-error'){
-      sumstat <- cbind(STUDY, OUTCOME, PREDICTOR, "OverFlow", "OverFlow", "OverFlow", "OverFlow", "OverFlow")
-    }else{
-      temp = summary(testCox)$coefficients
-      betas <- temp[,1]
-      se <- temp[,3]
-      zval <- temp[,4]
-      pval <- temp[,5]
-      NinSet = paste('E', testCox$nevent, '/N', testCox$n, sep='')
-      sumstat <- cbind(STUDY, OUTCOME, PREDICTOR, betas, se, zval, pval, NinSet)
+  for (j in 1:nrow(SET)){ # iterate OUTCOMEs
+    cohort=fread(SET$NAME[j]) %>% arrange(ID, TSTART)
+    cohort_snp = left_join(cohort, SNPset, by = "ID")
+    cohort_snp$SurvObj1 = with(cohort_snp, Surv(TSTART, TSTOP, OUTCOME == 1))
+
+    surv.func2 = function(x){
+      # Models
+      MODEL5 = paste("SurvObj1 ~", paste(c(SNPs[x], names(cohort)[4:(length(names(cohort))-8)], paste("PC",1:5, sep="")), collapse = "+") )
+      testCox5 = try(coxph(eval(parse(text = MODEL5)), data = cohort_snp),silent = T)
+      if(class(testCox)[1]=='try-error'){next}
+      RES = summary(testCox5)$coefficients[1,]
+      EVENT_OBS = paste(testCox5$nevent, testCox5$n, sep="_")
+      sumstat <- c(SNPs[x], EVENT_OBS, as.numeric(RES[4]), RES[1], RES[3], RES[5])
     }
+    temp = mclapply(1:length(SNPs), surv.func2)
+    temp2 = do.call(rbind, temp)
+    attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "TEST", "Beta", "SE", "Pvalue")
+    write.table(temp2, paste(SET$OUTCOME[j], DATASETs[i], "chrtemp.txt", sep="_"), row.names = F, quote = F, sep = "\t")
   }
-  sumstat[1,]
+  
+  Sys.time()-t
 }
-
-t <- proc.time()
-i = 9
-temp = mclapply(1:nrow(GRID), cox.stats.func)
-temp2 = do.call(rbind, temp)
-proc.time() - t
 
 
 rm(list=ls())

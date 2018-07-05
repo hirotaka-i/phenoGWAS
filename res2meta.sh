@@ -1,17 +1,21 @@
 #!bin/bash
 # sbatch results.sh $outcome $dataset
-$PHENO=1
-$DATASET=2
+# a combined data at /data/LNG/Hirotaka/progGWAS/rvtest/$PHENO/$DATASET/toMeta.GWAS.tab
+PHENO=$1
+DATASET=$2
 
-cat /data/LNG/Hirotaka/progGWAS/rvtest/$PHENO/chr*/$DATASET.SingleWald.assoc | grep -v 'N_INFORMATIVE' > /data/LNG/Hirotaka/progGWAS/rvtest/$PHENO/$DATASET/allChrs.assoc 
-cat /data/LNG/Hirotaka/progGWAS/SNPfilter/$DATASET"_"maf001rsq03_chr*.info | grep -v 'Rsq' > /data/LNG/Hirotaka/progGWAS/rvtest/$PHENO/$DATASET/allChrs.Info
-cd /data/LNG/Hirotaka/progGWAS/rvtest/$PHENO/$DATASET
+
+cd /data/LNG/Hirotaka/progGWAS
+rm -rf ./rvtest/$PHENO/$DATASET
+mkdir -p ./rvtest/$PHENO/$DATASET
+cat ./rvtest/$PHENO/chr*/$DATASET.SingleWald.assoc | grep -v 'N_INFORMATIVE' > ./rvtest/$PHENO/$DATASET/allChrs.assoc
+cat ./SNPfilter/$DATASET"_"maf001rsq3_chr*.info | grep -v 'Rsq' > ./rvtest/$PHENO/$DATASET/allChrs.Info
+cd ./rvtest/$PHENO/$DATASET
 
 module load R
-
-R
-library(dplyr)
-library(data.table)
+echo '
+require(dplyr)
+require(data.table)
 infos <- fread(paste("allChrs.Info"))
 colnames(infos) <- c("SNP","ALT_Frq","Rsq")
 assoc <- fread(paste("allChrs.assoc"))
@@ -29,7 +33,5 @@ dat$P <- dat$Pvalue
 dat$Rsq <- dat$Rsq
 dat0 <- dat[,c("markerID","minorAllele","majorAllele","beta","se","maf","P", "Rsq")]
 write.table(dat0, file=paste("toMeta.GWAS.tab"), quote = F, sep = "\t", row.names = F)
-
-cd /home/iwakih2/p02_progGWAS
-
-/data/LNG/Hirotaka/progGWAS/rvtest/$PHENO/$DATASET/toMeta.GWAS.tab
+' > res2meta.R
+Rscript --vanilla res2meta.R
