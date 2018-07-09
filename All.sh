@@ -141,7 +141,7 @@ done
 
 for OUTCOME in $(ls /data/LNG/Hirotaka/progGWAS/rvtest); do
   echo "
-  OUTFILE /data/LNG/Hirotaka/progGWAS/rvtest/$OUTCOME .tbl
+  OUTFILE /data/LNG/Hirotaka/progGWAS/rvtest/$OUTCOME/meta .tbl
   ANALYZE HETEROGENEITY
   QUIT
   " >> /data/LNG/Hirotaka/progGWAS/rvtest/$OUTCOME/metal.txt
@@ -152,10 +152,12 @@ for OUTCOME in $(ls /data/LNG/Hirotaka/progGWAS/rvtest); do
 	echo metal /data/LNG/Hirotaka/progGWAS/rvtest/$OUTCOME/metal.txt >> metal.swarm
 done
 
+# MMSE Only one cohort. Cannot do metal at this moment.
+grep -v "MMSE" metal.swarm > metal.swarm2
+
+# conduct swarm
 swarm -f test.swarm -g 6 -p 2 -b 2 --time=1:00:00 --module metal --logdir ./swarm_metal --module metal
-
 ####################################################################################################
-
 # Survival analysis 
 ## Need to use R for using Cox model with time-varying covariates 
 ### Convert SNPs file to 
@@ -165,68 +167,37 @@ swarm -f test.swarm -g 6 -p 2 -b 2 --time=1:00:00 --module metal --logdir ./swar
 # etc
 
 
-DATASET=$1
-CHNUM=$2
+for dataset in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PICNICS" "PPMI" "PRECEPT" "SCOPA";do
+  cd /data/LNG/Hirotaka/progGWAS/SNPfilter; \
+  cat $dataset"_"maf001rsq3_chr*.txt | sed -i 's/:/\t/g' | sed -i 's/-/\t/g' > $dataset"_"maf001rsq3_all.txt
+done
 
-#sbatch --cpus-per-task=20 --mem=100g --time=12:00:00 convert_HRC_impute_to_mach_dosage_NEW.sh PPMI 22
+FILTER=maf001rsq3
+rm -rf /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER
+for DATASET in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PICNICS" "PPMI" "PRECEPT" "SCOPA";do
+  mkdir -p /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER/$DATASET;
+  for CHNUM in {1..22};do
+    echo " \
+    cd /data/LNG/Hirotaka/progGWAS/SNPfilter; \
+    cat $DATASET"_"maf001rsq3_chr$CHNUM.txt | sed 's/:/\t/g' | sed 's/-/\t/g' > CONV/$FILTER/$DATASET/chr$CHNUM.txt.conv; \
+    cd CONV/$FILTER/$DATASET; \
+    bcftools view -R chr$CHNUM.txt.conv /data/LNG/CORNELIS_TEMP/progression_GWAS/$DATASET/chr$CHNUM.dose.vcf.gz | bgzip -c > chr$CHNUM.vcf.gz; \
+    DosageConvertor --vcfDose chr$CHNUM.vcf.gz \
+      --type mach \
+      --format 1 --prefix chr$CHNUM.filter;\
+    zless chr$CHNUM.filter.mach.info | cut -f 1,2,3 | sed 's/\t/_/g' | sed '1d'> chr$CHNUM.variant_list.txt; \
+    echo DOSE > dose.txt; \
+    echo ID > ID.txt; \
+    cat ID.txt dose.txt chr$CHNUM.variant_list.txt > chr$CHNUM.final_variant_list.txt; \
+    cut -f1 chr$CHNUM.final_variant_list.txt | paste -s | sed 's/ /\t/g' > chr$CHNUM.final_variant_list_trans.txt; \
+    gunzip chr$CHNUM.filter.mach.dose.gz; \
+    cat chr$CHNUM.filter.mach.dose | sed 's/->/\t/g' | cut -f2- > chr$CHNUM.filter.mach.dose.format; \
+    cat chr$CHNUM.final_variant_list_trans.txt chr$CHNUM.filter.mach.dose.format | gzip > chr$CHNUM.trans.txt.gz; \
+    rm -f chr$CHNUM.f* chr$CHNUM.v* chr$CHNUM.txt*
+    " >> vcf_transtext.swarm
+  done
+done
 
-module load samtools
-module load dosageconvertor
-# sinteractive --mem=100g --cpus-per-task=20
-cd /data/LNG/CORNELIS_TEMP/progression_GWAS/$DATASET
+rm -rf swarm_vcf_transtext
+swarm -f vcf_transtext.swarm -g 1.5 -p 2 -b 4 --time=1:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
 
-# filter variants for R2 and MAF
-cp   all_filtered_sites.txt
-sed -i ‘s/:/\t/g’ all_filtered_sites.txt
-sed -i ‘s/-/\t/g’ all_filtered_sites.txt
-
-# output file is .mach.dose.gz
-# info file output is remove.mach.info
-bcftools view -R all_filtered_sites.txt chr$CHNUM.dose.vcf.gz | bgzip -c > $CHNUM.vcf.gz
-DosageConvertor --vcfDose $CHNUM.vcf.gz \
-    --type mach \
-    --format 1 --prefix $CHNUM.filter
-
-# Next make sure to handle with duplicate chr:bp variant
-# meaning merge with A1 and A2 and prep to add header
-zless $CHNUM.filter.mach.info | cut -f 1,2,3 > variant_list.txt
-sed -i ‘s/\t/_/g’ variant_list.txt
-sed -i ‘1d’ variant_list.txt
-echo DOSE > dose.txt
-echo ID > ID.txt
-cat ID.txt dose.txt variant_list.txt > final_variant_list.txt
-
-# transpose
-awk '
-{
-   for (i=1; i<=NF; i++)  {
-       a[NR,i] = $i
-   }
-}
-NF>p { p = NF }
-END {    
-   for(j=1; j<=p; j++) {
-       str=a[1,j]
-       for(i=2; i<=NR; i++){
-           str=str” “a[i,j];
-       }
-       print str
-   }
-}' final_variant_list.txt > final_variant_list_trans.txt
-sed -i ‘s/ /\t/g’ final_variant_list_trans.txt
-
-# next add header to dosage file
-gunzip $CHNUM.filter.mach.dose.gz
-sed -i ‘s/->/\t/g’ $CHNUM.filter.mach.dose
-cut -f2- $CHNUM.filter.mach.dose > output 
-cat final_variant_list_trans.txt output | gzip > $CHNUM.filter.dosage_format.txt.gz
-rm all_filtered_sites.txt
-rm $CHNUM.filter.mach.info
-rm $CHNUM.vcf.gz
-rm $CHNUM.filter.mach.dose
-rm variant_list.txt
-rm dose.txt
-rm ID.txt
-rm final_variant_list.txt
-rm final_variant_list_trans.txt
-rm output
