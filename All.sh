@@ -10,7 +10,7 @@ for dataset in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PIC
 done
 
 rm -rf swarm_SNPfilter
-swarm -f SNPfilter.swarm --time=0:20:00 -g 3 -p 2 -b 3 --logdir ./swarm_SNPfilter --module R --devel
+swarm -f SNPfilter.swarm --time=0:20:00 -g 3 -p 2 -b 3 --logdir ./swarm_SNPfilter --module R
 
 
 # Create PCs
@@ -167,19 +167,16 @@ swarm -f test.swarm -g 6 -p 2 -b 2 --time=1:00:00 --module metal --logdir ./swar
 # etc
 
 
-for dataset in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PICNICS" "PPMI" "PRECEPT" "SCOPA";do
-  cd /data/LNG/Hirotaka/progGWAS/SNPfilter; \
-  cat $dataset"_"maf001rsq3_chr*.txt | sed -i 's/:/\t/g' | sed -i 's/-/\t/g' > $dataset"_"maf001rsq3_all.txt
-done
-
-FILTER=maf001rsq3
+# Only retain the last file
+rm vcf_transtext.swarm
 rm -rf /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER
+FILTER=maf001rsq3
 for DATASET in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PICNICS" "PPMI" "PRECEPT" "SCOPA";do
   mkdir -p /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER/$DATASET;
   for CHNUM in {1..22};do
     echo " \
     cd /data/LNG/Hirotaka/progGWAS/SNPfilter; \
-    cat $DATASET"_"maf001rsq3_chr$CHNUM.txt | sed 's/:/\t/g' | sed 's/-/\t/g' > CONV/$FILTER/$DATASET/chr$CHNUM.txt.conv; \
+    cat $DATASET"_"$FILTER"_"chr$CHNUM.txt | sed 's/:/\t/g' | sed 's/-/\t/g' > CONV/$FILTER/$DATASET/chr$CHNUM.txt.conv; \
     cd CONV/$FILTER/$DATASET; \
     bcftools view -R chr$CHNUM.txt.conv /data/LNG/CORNELIS_TEMP/progression_GWAS/$DATASET/chr$CHNUM.dose.vcf.gz | bgzip -c > chr$CHNUM.vcf.gz; \
     DosageConvertor --vcfDose chr$CHNUM.vcf.gz \
@@ -193,11 +190,77 @@ for DATASET in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PIC
     gunzip chr$CHNUM.filter.mach.dose.gz; \
     cat chr$CHNUM.filter.mach.dose | sed 's/->/\t/g' | cut -f2- > chr$CHNUM.filter.mach.dose.format; \
     cat chr$CHNUM.final_variant_list_trans.txt chr$CHNUM.filter.mach.dose.format | gzip > chr$CHNUM.trans.txt.gz; \
-    rm -f chr$CHNUM.f* chr$CHNUM.v* chr$CHNUM.txt*
+    rm -f chr$CHNUM.f* chr$CHNUM.v* chr$CHNUM.txt* dose.txt ID.txt
     " >> vcf_transtext.swarm
   done
 done
 
 rm -rf swarm_vcf_transtext
-swarm -f vcf_transtext.swarm -g 1.5 -p 2 -b 4 --time=1:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
+swarm -f vcf_transtext.swarm -g 3 -p 2 -b 4 --time=1:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext --devel
 
+
+# Code for analysis
+echo '
+# cox.R 
+## e.g. Rscript --vanilla cox.R DEMENTIA.SCOPA.surv 22 mas001rsq3
+args <- commandArgs(trailingOnly = TRUE)
+FILENAME = args[1]
+CHRNUM = args[2]
+FILTER = args[3]
+# FILENAME = "DEMENTIA.CORIELL.surv"
+# CHRNUM = 22
+
+# set variables
+OUTCOME = strsplit(FILENAME, "\\.")[[1]][1]
+DATASET = strsplit(FILENAME, "\\.")[[1]][2]
+
+# Cox model for GWAS
+library(data.table)
+library(dplyr)
+library(survival)
+library(parallel)
+
+# Read data
+## DATASET with TSTART and TSTOP
+cohort=fread(paste("outputs/surv", FILENAME, sep = "/")) %>% arrange(ID, TSTART)
+COVs = paste(names(cohort)[-c(1:3,ncol(cohort)-5:7)], collapse=" + ") # dropb c(ID, TSTART, OUTCOME, BEGIN, END, TSTOP)
+print(COVs)
+## Imputed data
+READ_LOCATION = paste("zcat -f /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/", FILTER, "/", DATASET, "/chr", CHRNUM, ".trans.txt.gz", sep = "")
+SNPset = fread(READ_LOCATION)
+## Merge
+cohort_snp = left_join(cohort, SNPset, by = "ID")
+cohort_snp$SurvObj1 = with(cohort_snp, Surv(TSTART, TSTOP, OUTCOME == 1))
+
+
+
+surv.listfunc = function(x){
+  # Models
+  MODEL = paste("SurvObj1 ~", "`", SNPs[x], "`+", COVs, sep = "")
+  testCox = try(coxph(eval(parse(text = MODEL)), data = cohort_snp),silent = T)
+  if(class(testCox)[1]=="try-error"){next}
+  RES = summary(testCox)$coefficients[1,]
+  EVENT_OBS = paste(testCox$nevent, testCox$n, sep="_")
+  sumstat <- c(SNPs[x], EVENT_OBS, as.numeric(RES[4]), RES[1], RES[3], RES[5])
+}
+
+temp = mclapply(1:10, surv.listfunc)
+temp2 = do.call(rbind, temp)
+attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "TEST", "Beta", "SE", "Pvalue")
+write.table(temp2, paste("outputs/surv_res/", OUTCOME,".", DATASET, ".", "chr", CHRNUM, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
+' > cox.R
+
+# Analysis
+rm -rf outputs/surv_res
+rm -f cox.swarm
+
+# FILTER=maf001rsq3
+
+mkdir outputs/surv_res
+for i in $(ls outputs/surv/);do
+  for j in {1..22};do
+    echo Rscript --vanilla analysis_cox.R $i $j $FILTER>> cox.swarm
+  done
+done
+
+swarm -f cox.swarm -g 8 -t 4 -b 4 --time=4:00:00 --module R --logdir ./swarm_cox
