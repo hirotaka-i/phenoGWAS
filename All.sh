@@ -23,7 +23,7 @@ echo '5 44000000 51500000 r1
 ## Create PC1-5 and combine with .cov files
 rm PlinkPC5.swarm
 for dataset in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PICNICS" "PPMI" "PRECEPT" "SCOPA";do
-	echo "bash PlinkPC5.sh $dataset" >> PlinkPC5.swarm
+  echo "bash PlinkPC5.sh $dataset" >> PlinkPC5.swarm
 done
 
 rm -rf swarm_PlinkPC5
@@ -149,7 +149,7 @@ done
 
 rm metal.swarm
 for OUTCOME in $(ls /data/LNG/Hirotaka/progGWAS/rvtest); do
-	echo metal /data/LNG/Hirotaka/progGWAS/rvtest/$OUTCOME/metal.txt >> metal.swarm
+  echo metal /data/LNG/Hirotaka/progGWAS/rvtest/$OUTCOME/metal.txt >> metal.swarm
 done
 
 # MMSE Only one cohort. Cannot do metal at this moment.
@@ -196,19 +196,23 @@ for DATASET in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PIC
 done
 
 rm -rf swarm_vcf_transtext
-swarm -f vcf_transtext.swarm -g 3 -p 2 -b 4 --time=1:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext --devel
+swarm -f vcf_transtext.swarm -g 3 -p 2 -b 4 --time=1:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
 
 
 # Code for analysis
 echo '
-# cox.R 
-## e.g. Rscript --vanilla cox.R DEMENTIA.SCOPA.surv 22 mas001rsq3
+# cox analysis
 args <- commandArgs(trailingOnly = TRUE)
 FILENAME = args[1]
 CHRNUM = args[2]
 FILTER = args[3]
+N_CORE = as.integer(args[4])-1
+
+## e.g. Rscript --vanilla cox.R DEMENTIA.SCOPA.surv 22 maf001rsq3 2
 # FILENAME = "DEMENTIA.CORIELL.surv"
 # CHRNUM = 22
+# FILTER = "maf001rsq3"
+# N_CORE = 2
 
 # set variables
 OUTCOME = strsplit(FILENAME, "\\.")[[1]][1]
@@ -228,39 +232,83 @@ print(COVs)
 ## Imputed data
 READ_LOCATION = paste("zcat -f /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/", FILTER, "/", DATASET, "/chr", CHRNUM, ".trans.txt.gz", sep = "")
 SNPset = fread(READ_LOCATION)
+SNPs = names(SNPset)[-(1:2)] # 1 ID, 2 DOSE, SNP name starts from 3
 ## Merge
 cohort_snp = left_join(cohort, SNPset, by = "ID")
 cohort_snp$SurvObj1 = with(cohort_snp, Surv(TSTART, TSTOP, OUTCOME == 1))
-
-
 
 surv.listfunc = function(x){
   # Models
   MODEL = paste("SurvObj1 ~", "`", SNPs[x], "`+", COVs, sep = "")
   testCox = try(coxph(eval(parse(text = MODEL)), data = cohort_snp),silent = T)
-  if(class(testCox)[1]=="try-error"){next}
-  RES = summary(testCox)$coefficients[1,]
-  EVENT_OBS = paste(testCox$nevent, testCox$n, sep="_")
-  sumstat <- c(SNPs[x], EVENT_OBS, as.numeric(RES[4]), RES[1], RES[3], RES[5])
+  if(class(testCox)[1]=="try-error"){
+    sumstat=rep(NA,6)
+  }else{
+    RES = summary(testCox)$coefficients[1,]
+    EVENT_OBS = paste(testCox$nevent, testCox$n, sep="_")
+    sumstat <- c(SNPs[x], EVENT_OBS, as.numeric(RES[4]), RES[1], RES[3], RES[5])
+  }
+  return(sumstat)
 }
 
-temp = mclapply(1:10, surv.listfunc)
+# temp = mclapply(1:100, surv.listfunc, mc.cores=N_CORE)
+# temp2 = do.call(rbind, temp)
+
+temp = mclapply(1:length(SNPs), surv.listfunc, mc.cores=N_CORE)
 temp2 = do.call(rbind, temp)
 attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "TEST", "Beta", "SE", "Pvalue")
-write.table(temp2, paste("outputs/surv_res/", OUTCOME,".", DATASET, ".", "chr", CHRNUM, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
-' > cox.R
+NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/surv/", OUTCOME, "/chr", CHRNUM, sep = "")
+dir.create(NEWDIR, recursive = T, showWarnings = F)
+write.table(temp2, paste(NEWDIR, "/", DATASET, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
+' > cox_mclapply.R
 
 # Analysis
-rm -rf outputs/surv_res
+rm -rf /data/LNG/Hirotaka/progGWAS/surv
 rm -f cox.swarm
 
 # FILTER=maf001rsq3
-
-mkdir outputs/surv_res
+# N_CORE only works with 1 at this point ?
 for i in $(ls outputs/surv/);do
   for j in {1..22};do
-    echo Rscript --vanilla analysis_cox.R $i $j $FILTER>> cox.swarm
+    echo Rscript --vanilla cox.R $i $j $FILTER 8>> cox.swarm
   done
 done
 
-swarm -f cox.swarm -g 8 -t 4 -b 4 --time=4:00:00 --module R --logdir ./swarm_cox
+swarm -f cox.swarm -g 50 -t 8 --time=4:00:00 --module R --logdir ./swarm_cox
+
+
+
+
+
+
+# Different stragtegy. Just analyze with the single core lapply per 100K SNPs ##################################
+# Separate chr$CHRNUM.trans.txt.gz
+## get the number of separation
+#### Number of SNPs at each allele
+rm -f sep1.txt
+for COHORT in $(ls  /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3);do
+  for CHRNUM in {1..22};do
+    echo $COHORT $CHRNUM `less /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3/$COHORT/chr$CHRNUM.trans.txt.gz | head -1 | tr '\t' '\n' | wc -l` >> sep1.txt
+  done
+done
+
+echo '
+options(scipen=999)
+num = read.table("sep1.txt")
+SEP = 10000
+num$V4 = num$V3/SEP
+num$V5 = floor(num$V4) # Will iterate with approximately 10K SNPs
+t = rep(NA, nrow(num)*200) # the max snp is 120*10K
+x = 1
+for (i in 1:nrow(num)){
+  for (j in 0:num$V5[i]){
+    if(j==0){START=1}else{START=paste("1,","2,",SEP*j, sep="")} #First 2 are "ID" and "DOSE" not SNPs
+    if(num$V5[i]==j){END=num$V3[i]}else{END=SEP*(j+1)-1}
+    t[x] = paste(num$V1[i], ".", num$V2[i], ".", j+1, ".", "-f ", START, "-", END, sep = "")
+    x = x + 1
+  }
+}
+KEYS = data.frame(SEPKEY = t[!is.na(t)])
+write.table(KEYS, "sep2.txt", row.names = F, quote = F, sep = "\t")
+' > sep2.R
+Rscript --vanilla sep2.R

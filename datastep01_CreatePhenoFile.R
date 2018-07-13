@@ -83,6 +83,7 @@ ContT
 ContT = ContT[-(7:12)] # erase UPDRS1-4, oldUPDRS, MDSUPDRS
 ContT
 COVs = c('FEMALE', 'YEARSEDUC', "FAMILY_HISTORY", 'AAO', "BLDfDIAG",  'DOPA', 'AGONIST')
+COVs_long = c('FEMALE', 'YEARSEDUC', "FAMILY_HISTORY", 'AAO', "YEARfDIAG",  'DOPA', 'AGONIST')
 
 plink_ltg = ltg_all %>% 
   mutate(FID = ID,
@@ -96,6 +97,8 @@ unlink("outputs/rvtest", recursive = T)
 dir.create("outputs/rvtest", showWarnings = F)
 unlink("outputs/surv", recursive = T)
 dir.create("outputs/surv", showWarnings = F)
+unlink("outputs/long", recursive = T)
+dir.create("outputs/long", showWarnings = F)
 
 PCAs = "/data/LNG/Hirotaka/progGWAS/pca/"
 
@@ -135,18 +138,21 @@ for(i in 1:length(COHORTs)){
   # filter out COVARIATES with all the same values or all NAs
   temp = cont %>% select(ContT) %>% summarise_all(funs(var(.,na.rm = T))) %>% t %>% as.data.frame
   temp$NAMES = rownames(temp) # rownames were converted to the covariates.
-  temp
   ContTs_i = temp %>% filter(V1>0) %>% select(NAMES) %>% t %>% as.vector # filter out NA outcomes and Var=0 outcomes
   temp2 = cont %>% filter(TSTART>0) %>% group_by(IID) %>% summarize_at(vars(ContTs_i),funs(sum(!is.na(.)))) %>% 
-    summarize_at(vars(ContTs_i),funs(max)) %>% t %>% data.frame# number of observataion per ID (max)
-  temp2 # number of maximu observataion per ID
+    summarize_at(vars(ContTs_i),funs(max)) %>% t %>% data.frame # number of observataion per ID (max)
   ContTs_i_cs = setdiff(ContTs_i, rownames(temp2)[temp2[,1] > 0]) # only cross-sectional continuous traits
+  ContTs_i_lt=rownames(temp2)[temp2[,1] > 0]
   if(length(ContTs_i_cs) != 0){ # if there are such variables..
     cont_new = cont %>% filter(TSTART == 0) %>% select(FID, IID, FATID, MATID, SEX, ContTs_i_cs) %>% left_join(., PC, by = "IID")
     write.table(cont_new, paste("outputs/rvtest/", COHORTs[i], ".contbl", sep = ""), row.names = F, quote = F, sep = "\t")
-  }else{
-    ContTs_i_cs = ""
-  }
+  }else{ContTs_i_cs = ""}
+    # Longitudinal set: it also should have covsariates because they will be analyzed with outcomes in R
+  if(length(ContTs_i_lt)!=0){
+    COVs_i_lt = gsub("BLDfDIAG", "YEARfDIAG", COVs)# replace BLDfDIAG -> YEARfDIAG
+    cont_new = cont %>% select(FID, IID, FATID, MATID, SEX, COVs_i_lt, ContTs_i_lt) %>% left_join(., PC, by = "IID")
+    write.table(cont_new, paste("outputs/long/", COHORTs[i], ".cont", sep = ""), row.names = F, quote = F, sep = "\t")
+  }else{ContTs_i_lt = ""}
   # Survival outcome
   PHENOSURV = c()
   for (j in (1:length(BinomT))){
@@ -156,7 +162,7 @@ for(i in 1:length(COHORTs)){
     cov2in = ltg %>% select(COVs) %>% summarise_all(funs(var(.,na.rm = T))) %>% t %>% as.data.frame
     cov2in$NAMES = rownames(cov2in) # rownames were converted to the covariates.
     COVs2in =  cov2in %>% filter(V1>0) %>% select(NAMES) %>% t %>% as.vector # filter out NA outcomes and Var=0 outcomes
-
+    
     ltg = ltg %>% select(ID, TSTART, OUTCOME, COVs2in)
     time2follow = ltg %>%
       arrange(TSTART) %>%
@@ -190,7 +196,8 @@ for(i in 1:length(COHORTs)){
       PHENOSURV = c(PHENOSURV, BinomT[j])
     }
   }
-  MODELs[i,] = paste(COHORTs[i], paste(COVs_i, collapse = ","), paste(ContTs_i_cs, collapse = ","), paste(BinomTs_i, collapse = ","), paste(PHENOSURV, collapse = ","), sep=":")
+  MODELs[i,] = paste(COHORTs[i], paste(COVs_i, collapse = ","), paste(ContTs_i_cs, collapse = ","), paste(BinomTs_i, collapse = ","), 
+                     paste(PHENOSURV, collapse = ","), paste(ContTs_i_lt, collapse = ","), sep=":")
 }
 write.table(MODELs, "outputs/MODELs.txt", row.names = F, quote = F)
 
