@@ -25,7 +25,7 @@ rm PlinkPC5.swarm
 for dataset in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PICNICS" "PPMI" "PRECEPT" "SCOPA";do
   echo "bash PlinkPC5.sh $dataset" >> PlinkPC5.swarm
 done
-
+ 
 rm -rf swarm_PlinkPC5
 swarm -f PlinkPC5.swarm --time=1:00:00 -g 2 -p 2 -b 6 --logdir ./swarm_PlinkPC5 --module plink
 
@@ -196,8 +196,7 @@ for DATASET in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PIC
 done
 
 rm -rf swarm_vcf_transtext
-swarm -f vcf_transtext.swarm -g 3 -p 2 -b 4 --time=1:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
-
+swarm -f vcf_transtext.swarm -g 3 -p 2 -b 4  --time=3:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
 
 # Code for analysis
 echo '
@@ -208,7 +207,7 @@ CHRNUM = args[2]
 FILTER = args[3]
 N_CORE = as.integer(args[4])-1
 
-## e.g. Rscript --vanilla cox.R DEMENTIA.SCOPA.surv 22 maf001rsq3 2
+# # e.g. Rscript --vanilla cox.R DEMENTIA.SCOPA.surv 22 maf001rsq3 2
 # FILENAME = "DEMENTIA.CORIELL.surv"
 # CHRNUM = 22
 # FILTER = "maf001rsq3"
@@ -251,11 +250,11 @@ surv.listfunc = function(x){
   return(sumstat)
 }
 
-# temp = mclapply(1:100, surv.listfunc, mc.cores=N_CORE)
-# temp2 = do.call(rbind, temp)
-
 temp = mclapply(1:length(SNPs), surv.listfunc, mc.cores=N_CORE)
 temp2 = do.call(rbind, temp)
+
+# temp = mclapply(1:length(SNPs), surv.listfunc, mc.cores=N_CORE)
+# temp2 = do.call(rbind, temp)
 attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "TEST", "Beta", "SE", "Pvalue")
 NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/surv/", OUTCOME, "/chr", CHRNUM, sep = "")
 dir.create(NEWDIR, recursive = T, showWarnings = F)
@@ -304,7 +303,7 @@ for (i in 1:nrow(num)){
   for (j in 0:num$V5[i]){
     if(j==0){START=1}else{START=paste("1,","2,",SEP*j, sep="")} #First 2 are "ID" and "DOSE" not SNPs
     if(num$V5[i]==j){END=num$V3[i]}else{END=SEP*(j+1)-1}
-    t[x] = paste(num$V1[i], ".", num$V2[i], ".", j+1, ".", "-f ", START, "-", END, sep = "")
+    t[x] = paste(num$V1[i], ".", num$V2[i], ".", j+1, ".", START, "-", END, sep = "")
     x = x + 1
   }
 }
@@ -312,3 +311,14 @@ KEYS = data.frame(SEPKEY = t[!is.na(t)])
 write.table(KEYS, "sep2.txt", row.names = F, quote = F, sep = "\t")
 ' > sep2.R
 Rscript --vanilla sep2.R
+
+# FILTER=maf001rsq3
+mkdir /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut
+for i in $(tail -n +2 sep2.txt);do
+  DATASET=$(echo $i | cut -d '.' -f 1)
+  CHRNUM=$(echo $i | cut -d '.' -f 2)
+  ITER=$(echo $i | cut -d '.' -f 3)
+  AUG=$(echo $i | cut -d '.' -f 4)
+  less /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER/$DATASET/chr$CHRNUM.trans.txt.gz | cut -f $AUG >> /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut/$DATASET.$CHRNUM.$ITER.txt
+done
+
