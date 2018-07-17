@@ -83,7 +83,6 @@ ContT
 ContT = ContT[-(7:12)] # erase UPDRS1-4, oldUPDRS, MDSUPDRS
 ContT
 COVs = c('FEMALE', 'YEARSEDUC', "FAMILY_HISTORY", 'AAO', "BLDfDIAG",  'DOPA', 'AGONIST')
-COVs_long = c('FEMALE', 'YEARSEDUC', "FAMILY_HISTORY", 'AAO', "YEARfDIAG",  'DOPA', 'AGONIST')
 
 plink_ltg = ltg_all %>% 
   mutate(FID = ID,
@@ -149,7 +148,11 @@ for(i in 1:length(COHORTs)){
   }else{ContTs_i_cs = ""}
     # Longitudinal set: it also should have covsariates because they will be analyzed with outcomes in R
   if(length(ContTs_i_lt)!=0){
-    COVs_i_lt = gsub("BLDfDIAG", "YEARfDIAG", COVs)# replace BLDfDIAG -> YEARfDIAG
+    COVs_i_lt_temp = gsub("BLDfDIAG", "YEARfDIAG", COVs)# replace BLDfDIAG -> YEARfDIAG
+    # Filger out non-effective COVs_i_lt
+    temp = cont %>% select(COVs_i_lt_temp) %>% summarise_all(funs(var(.,na.rm = T))) %>% t %>% as.data.frame
+    temp$NAMES = rownames(temp) # rownames were converted to the covariates.
+    COVs_i_lt = temp %>% filter(V1>0) %>% select(NAMES) %>% t %>% as.vector
     cont_new = cont %>% select(FID, IID, FATID, MATID, SEX, COVs_i_lt, ContTs_i_lt) %>% left_join(., PC, by = "IID")
     write.table(cont_new, paste("outputs/long/", COHORTs[i], ".cont", sep = ""), row.names = F, quote = F, sep = "\t")
   }else{ContTs_i_lt = ""}

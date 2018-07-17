@@ -196,88 +196,37 @@ for DATASET in "CORIELL" "DATATOP" "HBS" "OSLO" "PARKFIT" "PARKWEST" "PDBP" "PIC
 done
 
 rm -rf swarm_vcf_transtext
-swarm -f vcf_transtext.swarm -g 3 -p 2 -b 4  --time=3:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
+swarm -f vcf_transtext.swarm -g 1.5 -p 2 -b 4  --time=3:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
 
-# Code for analysis
-echo '
-# cox analysis
-args <- commandArgs(trailingOnly = TRUE)
-FILENAME = args[1]
-CHRNUM = args[2]
-FILTER = args[3]
-N_CORE = as.integer(args[4])-1
+## The above process took a long time and becomes timeout for somes.
+###  Useful sunipet to collect failed procedures (by output)
+for i in $(ls /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3);do
+  for j in $(ls /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3/$i);do
+    if [[ $j == *".trans.txt.gz" ]];then
+      echo "$i"_maf001rsq3_"$j" >> vcf_transtext_done.txt
+    fi
+  done;
+done
 
-# # e.g. Rscript --vanilla cox.R DEMENTIA.SCOPA.surv 22 maf001rsq3 2
-# FILENAME = "DEMENTIA.CORIELL.surv"
-# CHRNUM = 22
-# FILTER = "maf001rsq3"
-# N_CORE = 2
-
-# set variables
-OUTCOME = strsplit(FILENAME, "\\.")[[1]][1]
-DATASET = strsplit(FILENAME, "\\.")[[1]][2]
-
-# Cox model for GWAS
-library(data.table)
-library(dplyr)
-library(survival)
-library(parallel)
-
-# Read data
-## DATASET with TSTART and TSTOP
-cohort=fread(paste("outputs/surv", FILENAME, sep = "/")) %>% arrange(ID, TSTART)
-COVs = paste(names(cohort)[-c(1:3,ncol(cohort)-5:7)], collapse=" + ") # dropb c(ID, TSTART, OUTCOME, BEGIN, END, TSTOP)
-print(COVs)
-## Imputed data
-READ_LOCATION = paste("zcat -f /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/", FILTER, "/", DATASET, "/chr", CHRNUM, ".trans.txt.gz", sep = "")
-SNPset = fread(READ_LOCATION)
-SNPs = names(SNPset)[-(1:2)] # 1 ID, 2 DOSE, SNP name starts from 3
-## Merge
-cohort_snp = left_join(cohort, SNPset, by = "ID")
-cohort_snp$SurvObj1 = with(cohort_snp, Surv(TSTART, TSTOP, OUTCOME == 1))
-
-surv.listfunc = function(x){
-  # Models
-  MODEL = paste("SurvObj1 ~", "`", SNPs[x], "`+", COVs, sep = "")
-  testCox = try(coxph(eval(parse(text = MODEL)), data = cohort_snp),silent = T)
-  if(class(testCox)[1]=="try-error"){
-    sumstat=rep(NA,6)
-  }else{
-    RES = summary(testCox)$coefficients[1,]
-    EVENT_OBS = paste(testCox$nevent, testCox$n, sep="_")
-    sumstat <- c(SNPs[x], EVENT_OBS, as.numeric(RES[4]), RES[1], RES[3], RES[5])
-  }
-  return(sumstat)
-}
-
-temp = mclapply(1:length(SNPs), surv.listfunc, mc.cores=N_CORE)
-temp2 = do.call(rbind, temp)
-
-# temp = mclapply(1:length(SNPs), surv.listfunc, mc.cores=N_CORE)
-# temp2 = do.call(rbind, temp)
-attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "TEST", "Beta", "SE", "Pvalue")
-NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/surv/", OUTCOME, "/chr", CHRNUM, sep = "")
-dir.create(NEWDIR, recursive = T, showWarnings = F)
-write.table(temp2, paste(NEWDIR, "/", DATASET, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
-' > cox_mclapply.R
-
-# Analysis
-rm -rf /data/LNG/Hirotaka/progGWAS/surv
-rm -f cox.swarm
-
-# FILTER=maf001rsq3
-# N_CORE only works with 1 at this point ?
-for i in $(ls outputs/surv/);do
+for i in $(ls /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3);do
   for j in {1..22};do
-    echo Rscript --vanilla cox.R $i $j $FILTER 8>> cox.swarm
+    if grep -q "$i"_maf001rsq3_chr"$j.trans" vcf_transtext_done.txt 
+    then
+      echo "OK" >> vcf_transtext_done2.txt
+    else
+      echo "$i"_maf001rsq3_chr"$j".txt >> vcf_transtext_done2.txt
+    fi
   done
 done
 
-swarm -f cox.swarm -g 50 -t 8 --time=4:00:00 --module R --logdir ./swarm_cox
+cat vcf_transtext_done2.txt | grep -v "OK" > vcf_transtext_done3.txt
+
+for i in $(cat vcf_transtext_done3.txt) ;do
+  grep $i vcf_transtext.swarm >> vcf_transtext_donenot.txt
+done
 
 
-
-
+swarm -f vcf_transtext_donenot.txt -g 1.5 -p 2 --time=24:00:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
 
 
 # Different stragtegy. Just analyze with the single core lapply per 100K SNPs ##################################
@@ -314,11 +263,195 @@ Rscript --vanilla sep2.R
 
 # FILTER=maf001rsq3
 mkdir /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut
+FOLDER=/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut
 for i in $(tail -n +2 sep2.txt);do
   DATASET=$(echo $i | cut -d '.' -f 1)
   CHRNUM=$(echo $i | cut -d '.' -f 2)
   ITER=$(echo $i | cut -d '.' -f 3)
   AUG=$(echo $i | cut -d '.' -f 4)
-  less /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER/$DATASET/chr$CHRNUM.trans.txt.gz | cut -f $AUG >> /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut/$DATASET.$CHRNUM.$ITER.txt
+  less /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER/$DATASET/chr$CHRNUM.trans.txt.gz | cut -f $AUG >> $FOLDER/$DATASET.$CHRNUM.$ITER.txt
 done
+
+
+# Cox analysis
+# FOLDER=/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut
+for i in $(ls outputs/surv/);do 
+  OUTCOME=$(echo $i | cut -d '.' -f 1)
+  DATASET=$(echo $i | cut -d '.' -f 2)
+  for j in $(ls $FOLDER | grep $DATASET);do
+    CHRNUM=$(echo $j | cut -d '.' -f 2)
+    ITER=$(echo $j | cut -d '.' -f 3)
+    echo $OUTCOME.$DATASET.$CHRNUM.$ITER >> cox.list
+  done
+done
+
+
+# Code for analysis
+# # e.g. Rscript --vanilla cox_single.R CONST.DATATOP.22.9 /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3_10Kcut
+echo '
+# cox analysis
+args <- commandArgs(trailingOnly = TRUE)
+COXLIST = args[1]
+FOLDER = args[2]
+
+# COXLIST = "CONST.DATATOP.22.9"
+# FOLDER = "/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3_10Kcut"
+
+# set variables
+OUTCOME = strsplit(COXLIST, "\\.")[[1]][1]
+DATASET = strsplit(COXLIST, "\\.")[[1]][2]
+CHRNUM =  strsplit(COXLIST, "\\.")[[1]][3]
+ITER =  strsplit(COXLIST, "\\.")[[1]][4]
+
+# Cox model for GWAS
+library(data.table)
+library(dplyr)
+library(survival)
+
+# Read data
+## DATASET with TSTART and TSTOP
+cohort=fread(paste("outputs/surv/", OUTCOME, ".", DATASET, ".surv", sep = "")) %>% arrange(ID, TSTART)
+COVs = paste(names(cohort)[-c(1:3,ncol(cohort)-5:7)], collapse=" + ") # dropb c(ID, TSTART, OUTCOME, BEGIN, END, TSTOP)
+
+## Imputed data
+SNPset = fread(paste(FOLDER, "/", DATASET, ".", CHRNUM, ".", ITER, ".txt", sep=""))
+SNPs = names(SNPset)[-(1:2)] # 1 ID, 2 DOSE, SNP name starts from 3
+## Merge
+cohort_snp = left_join(cohort, SNPset, by = "ID")
+cohort_snp$SurvObj1 = with(cohort_snp, Surv(TSTART, TSTOP, OUTCOME == 1))
+
+surv.listfunc = function(x){
+  # Models
+  MODEL = paste("SurvObj1 ~", "`", SNPs[x], "`+", COVs, sep = "")
+  testCox = try(coxph(eval(parse(text = MODEL)), data = cohort_snp),silent = T)
+  if(class(testCox)[1]=="try-error"){
+    sumstat=rep(NA,6)
+  }else{
+    temp= summary(testCox)$coefficients
+    if(grep(SNPs[x], rownames(temp)) %>% length == 0){ # In this case, SNP is dropeed from the model
+      sumstat=rep("DROP",6)
+    }else{
+      RES = temp[1,]
+      EVENT_OBS = paste(testCox$nevent, testCox$n, sep="_")
+      sumstat <- c(SNPs[x], EVENT_OBS, as.numeric(RES[4]), RES[1], RES[3], RES[5])
+    }
+  }
+  return(sumstat)
+}
+temp = lapply(1:100, surv.listfunc)
+temp = lapply(1:length(SNPs), surv.listfunc)
+temp2 = do.call(rbind, temp)
+
+attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "TEST", "Beta", "SE", "Pvalue")
+NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/surv/", OUTCOME, "/chr", CHRNUM, sep = "")
+dir.create(NEWDIR, recursive = T, showWarnings = F)
+write.table(temp2, paste(NEWDIR, "/", DATASET, ".", ITER, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
+' > cox_single.R
+
+# Analysis
+# rm -f cox_single.swarm
+for i in $(cat cox.list);do
+  echo Rscript --vanilla cox_single.R $i $FOLDER >> cox_single.swarm
+done
+
+rm -f swarm_single.cox
+swarm -f cox_single.swarm -g 1.5 -p 2 -b 3 --time=1:00:00 --module R --logdir ./swarm_sigle_cox
+
+
+
+# GLMM
+# Code for analysis
+# FILTER=maf001rsq3
+# FOLDER=/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut
+rm long.list
+for J in $(ls $FOLDER);do
+  for I in $(tail -n +2 outputs/MODELs.txt);do
+    OS=$(echo $I | cut -d ":" -f 6 | tr , "\t")
+    D=$(echo $I | cut -d ":" -f 1)
+    for O in $OS; do
+      if [[ $J == $D* ]]
+      then
+        echo $O.$J >> long.list
+      fi
+    done
+  done
+done
+
+# # e.g. Rscript --vanilla cox_single.R HY.DATATOP.22.9.txt /data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3_10Kcut
+echo '
+# longitudinal analysis (for cross-sectional section)
+args <- commandArgs(trailingOnly = TRUE)
+LONGLIST = args[1]
+FOLDER = args[2]
+
+# LONGLIST = "HY.DATATOP.22.9.txt"
+# FOLDER = "/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3_10Kcut"
+
+# set variables
+OUTCOME = strsplit(LONGLIST, "\\.")[[1]][1]
+DATASET = strsplit(LONGLIST, "\\.")[[1]][2]
+CHRNUM =  strsplit(LONGLIST, "\\.")[[1]][3]
+ITER =  strsplit(LONGLIST, "\\.")[[1]][4]
+
+# Cox model for GWAS
+library(data.table)
+library(dplyr)
+library(lme4)
+
+# Read data
+## DATASET with TSTART and TSTOP
+cohort=fread(paste("outputs/long/", DATASET, ".cont", sep = "")) %>% arrange(IID, YEARfDIAG) %>% mutate(ID = paste(FID, IID, sep="_"))
+COVs = names(cohort)[grep("^FEMALE|^YEARSEDUC|^FAMILY_HISTORY|^AAO|^YEARfDIAG|^DOPA|^AGNOIST", names(cohort))]
+temp = fread("outputs/MODELs.txt", sep = ":", skip=1)
+
+## Imputed data
+SNPset = fread(paste(FOLDER, "/", DATASET, ".", CHRNUM, ".", ITER, ".txt", sep=""))
+SNPs = names(SNPset)[-(1:2)] # 1 ID, 2 DOSE, SNP name starts from 3
+## Merge
+cohort_snp = left_join(cohort, SNPset, by = "ID")
+
+glmm.listfunc = function(x){
+  # Models
+  MODEL = paste(OUTCOME, "~", "`", SNPs[x], "`+", paste(COVs, collapse="+"), "+(1|ID)", sep = "")
+  testLmer = try(lmer(eval(parse(text = MODEL)), data = cohort_snp),silent = T)
+  if(class(testLmer)[1]=="try-error"){
+    sumstat=rep("DROP",6)
+  }else{
+    temp = summary(testLmer)
+    temp1 = temp$coefficients
+    if(grep(SNPs[x], rownames(temp1)) %>% length == 0){ # In this case, SNP is dropeed from the model
+      sumstat=rep(NA,6)
+    }else{
+      RES = temp1[2,] # The first row is intercept
+      PV_APPROX = 2 * pnorm(abs(RES[3]), lower.tail=F) # df is enough large for approximation
+      OBS_N = paste(length(temp$residuals),'_', temp$ngrps, sep='')
+      sumstat <- c(SNPs[x], OBS_N, RES[3], RES[1], RES[2], PV_APPROX)
+    }
+  }
+  return(sumstat)
+}
+
+temp = lapply(1:length(SNPs), surv.listfunc)
+temp2 = do.call(rbind, temp)
+
+attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "Tvalue", "Beta", "SE", "Pv_approx")
+NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/long/", OUTCOME, "/chr", CHRNUM, sep = "")
+dir.create(NEWDIR, recursive = T, showWarnings = F)
+write.table(temp2, paste(NEWDIR, "/", DATASET, ".", ITER, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
+' > long.R
+
+# Analysis
+# rm -f cox_single.swarm
+rm long.swarm
+for i in $(cat long.list);do
+  echo Rscript --vanilla long.R $i $FOLDER >> long.swarm
+done
+
+rm -f swarm_long.cox
+swarm -f cox_single.swarm -g 1.5 -p 2 -b 3 --time=1:00:00 --module R --logdir ./swarm_long
+
+
+# time-associated allelic effect ###################################################
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4592098/ ############################
+
 
