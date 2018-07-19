@@ -1,5 +1,5 @@
 #!/bin/bash
-# rvtest for binomial outcomes or single measured continous outcomes 
+# rvtest for single measured continous outcomes 
 # e.g. sbatch --cpus-per-task=20 --mem=100g --time=2:00:00 rvtest.sh DEMENTIA 22 maf001rsq03 PPMI FEMALE,YEARSEDUC,FAMILY_HISTORY,AAO,BLDfDIAG,(PC1,PC2,PC3..)
 PHENO=$1
 CHNUM=$2

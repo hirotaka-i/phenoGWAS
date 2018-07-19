@@ -361,9 +361,9 @@ swarm -f cox_single.swarm -g 1.5 -p 2 -b 3 --time=1:00:00 --module R --logdir ./
 
 # GLMM
 # Code for analysis
-# FILTER=maf001rsq3
-# FOLDER=/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut
-rm long.list
+FILTER=maf001rsq3
+FOLDER=/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/$FILTER"_"10Kcut
+rm -rf long.list
 for J in $(ls $FOLDER);do
   for I in $(tail -n +2 outputs/MODELs.txt);do
     OS=$(echo $I | cut -d ":" -f 6 | tr , "\t")
@@ -402,7 +402,6 @@ library(lme4)
 ## DATASET with TSTART and TSTOP
 cohort=fread(paste("outputs/long/", DATASET, ".cont", sep = "")) %>% arrange(IID, YEARfDIAG) %>% mutate(ID = paste(FID, IID, sep="_"))
 COVs = names(cohort)[grep("^FEMALE|^YEARSEDUC|^FAMILY_HISTORY|^AAO|^YEARfDIAG|^DOPA|^AGNOIST", names(cohort))]
-temp = fread("outputs/MODELs.txt", sep = ":", skip=1)
 
 ## Imputed data
 SNPset = fread(paste(FOLDER, "/", DATASET, ".", CHRNUM, ".", ITER, ".txt", sep=""))
@@ -454,4 +453,92 @@ swarm -f cox_single.swarm -g 1.5 -p 2 -b 3 --time=1:00:00 --module R --logdir ./
 # time-associated allelic effect ###################################################
 # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4592098/ ############################
 
+rm -rf outputs/long_slope
+mkdir outputs/long_slope
 
+echo '
+# create data for slope analysis from longitudinal data
+library(data.table)
+library(dplyr)
+library(lme4)
+
+DATASETs = list.files(path = "outputs/long/") %>% tstrsplit(., "\\.") %>% .[[1]]
+
+x = 1
+AVAIL_OUTCOMEs = data.frame(CohortOutcome=NA) # record OUTCOMEs for later analysis
+
+for (DATASET in DATASETs){
+  # Read data
+  cohort=fread(paste("outputs/long/", DATASET, ".cont", sep = "")) %>% arrange(IID, YEARfDIAG) %>% mutate(ID = paste(FID, IID, sep="_"))
+
+  # OUTCOME list, COVs list
+  temp = fread("outputs/MODELs.txt", sep=":", skip=1)
+  OUTCOMEs = temp %>% filter(V1==DATASET) %>% with(tstrsplit(V6, ",")) %>% unlist
+
+  # Keep the time varying variables for regression
+  ## the treatment can slow the disease progression
+  COVs_trans = names(cohort)[grep("^YEARfDIAG|^DOPA|^AGONIST", names(cohort))]
+
+
+  # OUTCOME iteratioin
+  ## Prepare OUTPUT file
+  OUTPUT = cohort %>% select(FID, IID, FATID, MATID, SEX) %>% mutate(ID = paste(FID, IID, sep="_")) %>% distinct(IID, .keep_all = T)
+  for (OUTCOME in OUTCOMEs){
+    cohort$OUTCOME = cohort[, OUTCOME]
+    cohort_temp = cohort %>% filter(!is.na(OUTCOME))
+
+    # Transform the data to the orthogonal to the cross-sectional space
+    cohort_trans = cohort_temp %>% select(c("ID", "OUTCOME", COVs_trans)) %>% arrange(ID, YEARfDIAG)
+    IDs = unique(cohort_trans$ID)
+    trans.func = function(i){
+      xi = cohort_trans %>% filter(ID == IDs[i]) %>% select(-ID)
+      xi = as.matrix(xi)
+      if(nrow(xi) >1){
+        A = cumsum(rep(1, nrow(xi)))
+        A1 = poly(A, degree = length(A)-1)
+        transxi = t(A1) %*% xi
+        transxi[abs(transxi) < 0.0000000001] = 0 # put 0
+        transxi = data.frame(ID = IDs[i], transxi)
+        return(transxi)
+      }else{
+        return(rep(NA, length(c("OUTCOME", COVs_trans))+1))
+      }
+    }
+
+    temp = lapply(1:length(IDs), trans.func)
+    transdata = do.call(rbind, temp)
+
+    # Determine slopes for individuals, note we do not need intercept (-1 |ID)
+    if (length(COVs_trans)>1){             
+      testMod = try(lmer(paste("OUTCOME ~ ", paste(setdiff(COVs_trans, "YEARfDIAG"), collapse="+"), "- 1 + (YEARfDIAG -1 | ID)"), data = transdata), silent=T)
+    }else{
+      testMod = try(lmer(OUTCOME ~ 1 + (YEARfDIAG -1 | ID), data = transdata), silent=T)
+    }
+    if(class(testMod)[1]!="try-error"){
+      blups = ranef(testMod)$ID
+      names(blups)=paste(OUTCOME, "slope", sep="_")
+      blups$ID = rownames(blups)
+      OUTPUT = left_join(OUTPUT, blups, by = "ID")
+      AVAIL_OUTCOMEs[x, 1] = paste(DATASET, paste(OUTCOME, "slope", sep="_"), sep = ":")
+      x = x + 1
+      print(paste(DATASET, OUTCOME, "DONE"))
+    }
+  }
+  write.table(OUTPUT, paste("outputs/long_slope", "/", DATASET, ".slope", sep=""), row.names = F, quote = F, sep = "\t")
+}
+write.table(AVAIL_OUTCOMEs, "outputs/long_slope_outcomes.txt", row.names = F, quote = F, sep = "\t")
+' > long_time.R
+
+
+Rscript --vanilla long_time.R
+
+rm -f long_time.swarm
+for I in $(tail -n +2 outputs/long_slope_outcomes.txt);do
+  O=$(echo $I | cut -d ":" -f 2)
+  D=$(echo $I | cut -d ":" -f 1)
+  for CHRNUM in 22;do
+    echo "rvtest3.sh $O $CHRNUM $FILTER $D" >> long_time.swarm
+  done
+done
+
+swarm -f lont_time.swarm --time=2:00:00 -p 2 -b 4 --module rvtests --logdir ./swarm_rvtest
