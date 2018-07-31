@@ -24,6 +24,11 @@ GNTYP_OUT=/data/LNG/Hirotaka/progGWAS
 
 # The following filter is used
 FILTER=maf001rsq3
+# The following is the place for transposed SNPs cut by 20K each
+FOLDER=$GNTYP_OUT/SNPfilter/$FILTER"_"20Kcut
+WORKDIR=$(pwd)
+
+
 
 mkdir outputs # outputs for phenotypes
 
@@ -85,7 +90,7 @@ FILTER=maf001rsq3
 ## Sample1    1.23    0.11
 ## Sample2...
 
-# First cut each chromosome in a easy-operable number of SNPs
+# First cut each chromosome in a easy-operable number of SNPs (20K)
 ## "SEP" in R code will define the number. 
 ## Count the number of filtered SNPs in each chromosome 
 rm -f _sep1.txt
@@ -146,6 +151,7 @@ for DATASET in $(cat Portfolios.txt) ;do
     " >> _vcf_transtext.swarm
   done
 done
+
 # 5K subjobs so use 
 rm -rf swarm_vcf_transtext
 swarm -f _vcf_transtext.swarm -g 1 -p 2 -b 100 --time=0:04:00 --module samtools,dosageconvertor --logdir ./swarm_vcf_transtext
@@ -161,14 +167,13 @@ swarm -f _vcf_transtext.swarm -g 1 -p 2 -b 100 --time=0:04:00 --module samtools,
 
 
 # Create PCs from original arrayed-data. 
-## arrayed-data should be in /data/LNG/CORNELIS_T
 ##  set exclusion_region
 echo '5 44000000 51500000 r1
 6 25000000 33500000 r2
 8 8000000 12000000 r3
 11 45000000 57000000 r4' > exclusion_regions_hg19.txt
 
-## Create PC1-5 and combine with .cov files
+## Create PC1-5
 rm _PlinkPC5.swarm
 for DATASET in $(cat Portfolios.txt) ;do
   echo "
@@ -181,7 +186,7 @@ for DATASET in $(cat Portfolios.txt) ;do
 done
  
 rm -rf swarm_PlinkPC5
-swarm -f _PlinkPC5.swarm --time=0:10:00 -g 2 -p 2 -b 6 --logdir ./swarm_PlinkPC5 --module plink
+swarm -f _Plink PC5.swarm --time=0:10:00 -g 2 -p 2 -b 6 --logdir ./swarm_PlinkPC5 --module plink
 
 # FID, IID in PC5 files are different from those in imputed files in some datasets. Correct this.
 # temporary make eigenvec2 because PARKFIT returns blank if direct re-writing...
@@ -221,9 +226,10 @@ done
 
 ###############################################################################################################################################
 # Create phenotypes files for analysis for imputed individuals
-## HBS data has not genetic-phenotypic table so will be eliminated from the process
-## For rvtest: .binom, .contlm .cov and MODELs.txt (outputs/rvtest/.)
+## For rvtest (baseline): .binom, .contlm, .cov and MODELs.txt (outputs/rvtest/.)
+## For rvtest (slope): .slope files and outputs/long_slope_outcomes.txt (DATASET and OUTCOME)
 ## For survival: OUTCOME.COHORT.surv (outputs/survival/.)
+## For 
 ## MODELs.txt: cohort:covs:outcomes(lm):outcomes(glm):outcomes(surv)
 ## PC1-5 are joined with .cov file or .surv file.
 
@@ -369,7 +375,7 @@ Rscript --vanilla _slope.R
 ###############################################
 # rvtest - for outcomes per individual ########
 ###############################################
-rm -f _rvtest.swarm
+rm -f _rvtest.swarm _rvtests_done.txt
 # For binomial outcomes (logistic regression)
 for item in $(tail -n +2 outputs/MODELs.txt);do 
   DATASET=$(echo $item | cut -d ":" -f 1)
@@ -379,6 +385,7 @@ for item in $(tail -n +2 outputs/MODELs.txt);do
     if [ $OUTCOME == "" ];then
       continue
     fi
+    echo "rvtest_binom,$DATASET,$OUTCOME" >> _rvtests_done.txt
     for CHNUM in {1..22};do
       echo "
       mkdir -p $GNTYP_OUT/rvtest/$OUTCOME/chr$CHNUM;\
@@ -401,6 +408,7 @@ for item in $(tail -n +2 outputs/MODELs.txt);do
     if [ $OUTCOME == "" ];then
       continue
     fi
+    echo "rvtest_cont,$DATASET,$OUTCOME" >> _rvtests_done.txt
     for CHNUM in {1..22};do
       echo "
       mkdir -p $GNTYP_OUT/rvtest/$OUTCOME/chr$CHNUM;\
@@ -418,6 +426,7 @@ done
 for item in $(tail -n +2 outputs/long_slope_outcomes.txt);do
   OUTCOME=$(echo $item | cut -d ":" -f 2)
   DATASET=$(echo $item | cut -d ":" -f 1)
+  echo "rvtest_slope,$DATASET,$OUTCOME" >> _rvtests_done.txt
   for CHNUM in {1..22};do
     echo "
     mkdir -p $GNTYP_OUT/rvtest/$OUTCOME/chr$CHNUM;\
@@ -431,11 +440,12 @@ done
 
 
 rm -rf swarm_rvtest
-swarm -f _rvtest.swarm --time=2:00:00 -p 2 -b 4 --logdir ./swarm_rvtest
+swarm -f _rvtest.swarm --time=3:00:00 -p 2 -b 8 --logdir ./swarm_rvtest --module rvtests --devel
 # maf001rsq3.. longetst time was 4:30:00 (b4) so 2hr for each job would be enough
 
-
-
+# Oslo didn't finish in 2:00
+# rm -rf swarm_rvtest
+# swarm -f ../OSLOimcomplete.txt --time=6:00:00 -p 2 --logdir ./swarm_rvtest --module rvtests --devel
 
 
 
@@ -448,34 +458,17 @@ swarm -f _rvtest.swarm --time=2:00:00 -p 2 -b 4 --logdir ./swarm_rvtest
 # Continous -> linear mixed model  ########
 ###########################################
 # Cox analysis
-# FOLDER=$GNTYP_OUT/SNPfilter/CONV/$FILTER"_"10Kcut
-for i in $(ls outputs/surv/);do 
-  OUTCOME=$(echo $i | cut -d '.' -f 1)
-  DATASET=$(echo $i | cut -d '.' -f 2)
-  for j in $(ls $FOLDER | grep $DATASET);do
-    CHRNUM=$(echo $j | cut -d '.' -f 2)
-    ITER=$(echo $j | cut -d '.' -f 3)
-    echo $OUTCOME.$DATASET.$CHRNUM.$ITER >> _coxlist
-  done
-done
-
-
 # Code for analysis
-# # e.g. Rscript --vanilla cox_single.R CONST.DATATOP.22.9 $GNTYP_OUT/SNPfilter/CONV/maf001rsq3_10Kcut
+# # e.g. Rscript --vanilla cox_single.R CONST DATATOP 22 9  $GNTYP_OUT/SNPfilter/$FILTER_20Kcut
 echo '
 # cox analysis
 args <- commandArgs(trailingOnly = TRUE)
-COXLIST = args[1]
-FOLDER = args[2]
-
-# COXLIST = "CONST.DATATOP.22.9"
-# FOLDER = "/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3_10Kcut"
-
 # set variables
-OUTCOME = strsplit(COXLIST, "\\.")[[1]][1]
-DATASET = strsplit(COXLIST, "\\.")[[1]][2]
-CHRNUM =  strsplit(COXLIST, "\\.")[[1]][3]
-ITER =  strsplit(COXLIST, "\\.")[[1]][4]
+OUTCOME = args[1]
+DATASET = args[2]
+chrNUM =  args[3]
+ITER =  args[4]
+FOLDER = args[5] 
 
 # Cox model for GWAS
 library(data.table)
@@ -484,14 +477,14 @@ library(survival)
 
 # Read data
 ## DATASET with TSTART and TSTOP
-cohort=fread(paste("outputs/surv/", OUTCOME, ".", DATASET, ".surv", sep = "")) %>% arrange(ID, TSTART)
+cohort=fread(paste("outputs/surv/", OUTCOME, ".", DATASET, ".surv", sep = "")) %>% arrange(IID, TSTART)
 COVs = paste(names(cohort)[-c(1:3,ncol(cohort)-5:7)], collapse=" + ") # dropb c(ID, TSTART, OUTCOME, BEGIN, END, TSTOP)
 
 ## Imputed data
-SNPset = fread(paste(FOLDER, "/", DATASET, ".", CHRNUM, ".", ITER, ".txt", sep=""))
+SNPset = fread(paste("zcat -f ", FOLDER, "/", DATASET, "/", chrNUM, ".", ITER, ".trans.txt.gz", sep=""))
 SNPs = names(SNPset)[-(1:2)] # 1 ID, 2 DOSE, SNP name starts from 3
 ## Merge
-cohort_snp = left_join(cohort, SNPset, by = "ID")
+cohort_snp = left_join(cohort, SNPset, by = c("IID"="ID"))
 cohort_snp$SurvObj1 = with(cohort_snp, Surv(TSTART, TSTOP, OUTCOME == 1))
 
 surv.listfunc = function(x){
@@ -499,11 +492,11 @@ surv.listfunc = function(x){
   MODEL = paste("SurvObj1 ~", "`", SNPs[x], "`+", COVs, sep = "")
   testCox = try(coxph(eval(parse(text = MODEL)), data = cohort_snp),silent = T)
   if(class(testCox)[1]=="try-error"){
-    sumstat=rep(NA,6)
+    sumstat=c(SNPs[x], "NoConverge", rep(NA,4))
   }else{
     temp= summary(testCox)$coefficients
     if(grep(SNPs[x], rownames(temp)) %>% length == 0){ # In this case, SNP is dropeed from the model
-      sumstat=rep("DROP",6)
+      sumstat=c(SNPs[x], "NoVforSNP", rep(NA, 4))
     }else{
       RES = temp[1,]
       EVENT_OBS = paste(testCox$nevent, testCox$n, sep="_")
@@ -512,29 +505,53 @@ surv.listfunc = function(x){
   }
   return(sumstat)
 }
-temp = lapply(1:100, surv.listfunc)
+
 temp = lapply(1:length(SNPs), surv.listfunc)
 temp2 = do.call(rbind, temp)
-
 attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "TEST", "Beta", "SE", "Pvalue")
-NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/surv/", OUTCOME, "/chr", CHRNUM, sep = "")
+NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/surv/", OUTCOME, "/", chrNUM, sep = "")
 dir.create(NEWDIR, recursive = T, showWarnings = F)
 write.table(temp2, paste(NEWDIR, "/", DATASET, ".", ITER, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
-' > cox_single.R
+print("finish")
+' > _surv.R
 
-# Analysis
-# rm -f cox_single.swarm
-for i in $(cat cox.list);do
-  echo Rscript --vanilla cox_single.R $i $FOLDER >> cox_single.swarm
+
+FOLDER=$GNTYP_OUT/SNPfilter/$FILTER"_"20Kcut
+rm _surv.swarm _surv_done.txt
+for i in $(ls outputs/surv/);do 
+  OUTCOME=$(echo $i | cut -d '.' -f 1)
+  DATASET=$(echo $i | cut -d '.' -f 2)
+  echo "surv,$DATASET,$OUTCOME" >> _surv_done.txt
+  for j in $(ls $FOLDER/$DATASET);do
+    chrNUM=$(echo $j | cut -d '.' -f 1)
+    ITER=$(echo $j | cut -d '.' -f 2)
+    echo "Rscript --vanilla _surv.R $OUTCOME $DATASET $chrNUM $ITER $FOLDER">> _surv.swarm
+  done
 done
 
-rm -f swarm_single.cox
-swarm -f cox_single.swarm -g 1.5 -p 2 -b 3 --time=1:00:00 --module R --logdir ./swarm_sigle_cox
+rm -rf swarm_surv
+swarm -f _surv.swarm -g 1.5 -p 2 -b 100 --time=0:18:00 --module R --logdir ./swarm_surv
+# The initial setting of -b 130 got timeouts aroung 102nd jobs at 24:00:00
 
 
-
-
-
+# Retrieve the imcomplete jobs and re-submit
+JOBNUM=6270580
+rm _fail_$JOBNUM*
+jobhist $JOBNUM | grep 'TIMEOUT' | cut -d " " -f1 | cut -d "_" -f2 > _fail_$JOBNUM.txt
+for i in $(cat _fail_$JOBNUM.txt);do
+  cat /spin1/swarm/$USER/$JOBNUM/cmd.$i"_"* >> _fail"_"$JOBNUM"_"temp.txt # when -p option on, two jobs per cpu. e.g. cmd.11_0/1 
+done
+# Take the input and only retireve the one without outputs. (Only for the program not updating until the job completes.)
+while read item;do
+  OUTCOME=$(echo $item | cut -d " " -f 4)
+  DATASET=$(echo $item | cut -d " " -f 5)
+  chrNUM=$(echo $item | cut -d " " -f 6)
+  ITER=$(echo $item | cut -d " " -f 7)
+  if ! test -e "$GNTYP_OUT/surv/$OUTCOME/$chrNUM/$DATASET.$ITER.txt";then
+    echo "$item" >> _fail"_"$JOBNUM.swarm
+  fi
+done < _fail"_"$JOBNUM"_"temp.txt
+swarm -f _fail"_"$JOBNUM.swarm -g 1.5 -p 2 -b 3 --time=0:18:00 --module R --logdir ./swarm_surv --devel
 
 
 
@@ -555,37 +572,15 @@ swarm -f cox_single.swarm -g 1.5 -p 2 -b 3 --time=1:00:00 --module R --logdir ./
 
 # GLMM
 # Code for analysis
-FILTER=maf001rsq3
-FOLDER=$GNTYP_OUT/SNPfilter/CONV/$FILTER"_"10Kcut
-rm -rf long.list
-for J in $(ls $FOLDER);do
-  for I in $(tail -n +2 outputs/MODELs.txt);do
-    OS=$(echo $I | cut -d ":" -f 6 | tr , "\t")
-    D=$(echo $I | cut -d ":" -f 1)
-    for O in $OS; do
-      if [[ $J == $D* ]]
-      then
-        echo $O.$J >> long.list
-      fi
-    done
-  done
-done
-
 # # e.g. Rscript --vanilla cox_single.R HY.DATATOP.22.9.txt $GNTYP_OUT/SNPfilter/CONV/maf001rsq3_10Kcut
 echo '
 # longitudinal analysis (for cross-sectional section)
 args <- commandArgs(trailingOnly = TRUE)
-LONGLIST = args[1]
-FOLDER = args[2]
-
-# LONGLIST = "HY.DATATOP.22.9.txt"
-# FOLDER = "/data/LNG/Hirotaka/progGWAS/SNPfilter/CONV/maf001rsq3_10Kcut"
-
-# set variables
-OUTCOME = strsplit(LONGLIST, "\\.")[[1]][1]
-DATASET = strsplit(LONGLIST, "\\.")[[1]][2]
-CHRNUM =  strsplit(LONGLIST, "\\.")[[1]][3]
-ITER =  strsplit(LONGLIST, "\\.")[[1]][4]
+OUTCOME = args[1]
+DATASET = args[2]
+chrNUM =  args[3]
+ITER =  args[4]
+FOLDER = args[5] 
 
 # Cox model for GWAS
 library(data.table)
@@ -598,10 +593,11 @@ cohort=fread(paste("outputs/long/", DATASET, ".cont", sep = "")) %>% arrange(IID
 COVs = names(cohort)[grep("^FEMALE|^YEARSEDUC|^FAMILY_HISTORY|^AAO|^YEARfDIAG|^DOPA|^AGNOIST", names(cohort))]
 
 ## Imputed data
-SNPset = fread(paste(FOLDER, "/", DATASET, ".", CHRNUM, ".", ITER, ".txt", sep=""))
+SNPset = fread(paste("zcat -f ", FOLDER, "/", DATASET, "/", chrNUM, ".", ITER, ".trans.txt.gz", sep=""))
 SNPs = names(SNPset)[-(1:2)] # 1 ID, 2 DOSE, SNP name starts from 3
 ## Merge
-cohort_snp = left_join(cohort, SNPset, by = "ID")
+cohort_snp = left_join(cohort, SNPset, by = c("IID"="ID"))
+
 
 glmm.listfunc = function(x){
   # Models
@@ -617,31 +613,38 @@ glmm.listfunc = function(x){
     }else{
       RES = temp1[2,] # The first row is intercept
       PV_APPROX = 2 * pnorm(abs(RES[3]), lower.tail=F) # df is enough large for approximation
-      OBS_N = paste(length(temp$residuals),'_', temp$ngrps, sep='')
+      OBS_N = paste(length(temp$residuals), "_", temp$ngrps, sep="")
       sumstat <- c(SNPs[x], OBS_N, RES[3], RES[1], RES[2], PV_APPROX)
     }
   }
   return(sumstat)
 }
 
-temp = lapply(1:length(SNPs), surv.listfunc)
+temp = lapply(1:length(SNPs), glmm.listfunc)
 temp2 = do.call(rbind, temp)
 
-attributes(temp2)$dimnames[[2]]=c("SNP", "EVENT_OBS", "Tvalue", "Beta", "SE", "Pv_approx")
-NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/long/", OUTCOME, "/chr", CHRNUM, sep = "")
+attributes(temp2)$dimnames[[2]]=c("SNP", "OBS_N", "Tvalue", "Beta", "SE", "Pv_approx")
+NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/long/", OUTCOME, "/", chrNUM, sep = "")
 dir.create(NEWDIR, recursive = T, showWarnings = F)
 write.table(temp2, paste(NEWDIR, "/", DATASET, ".", ITER, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
-' > long.R
+' > _long.R
 
 # Analysis
-# rm -f cox_single.swarm
-rm long.swarm
-for i in $(cat long.list);do
-  echo Rscript --vanilla long.R $i $FOLDER >> long.swarm
+rm _long.swarm _long_done.txt
+for I in $(tail -n +2 outputs/MODELs.txt);do
+  OUTCOMEs=$(echo $I | cut -d ":" -f 6 | tr , "\t")
+  DATASET=$(echo $I | cut -d ":" -f 1)
+  for OUTCOME in $OUTCOMEs; do
+    echo "long,$DATASET,$OUTCOME" >> _long_done.txt
+    for J in $(ls $FOLDER/$DATASET/);do
+      chrNUM=$(echo $J | cut -d "." -f1)
+      ITER=$(echo $J | cut -d "." -f2)
+      echo "Rscript --vanilla _long.R $OUTCOME $DATASET $chrNUM $ITER $FOLDER" >> _long.swarm
+    done
+  done
 done
 
-rm -f swarm_long.cox
-swarm -f cox_single.swarm -g 1.5 -p 2 -b 3 --time=1:00:00 --module R --logdir ./swarm_long
+swarm -f _long.swarm -g 1.5 -p 2 -b 24 --time=1:00:00 --module R --logdir ./swarm_long --devel
 
 
 
@@ -676,90 +679,154 @@ swarm -f cox_single.swarm -g 1.5 -p 2 -b 3 --time=1:00:00 --module R --logdir ./
 
 
 
-
-
-
-
-
-
-
+##################################################################################################################################################
 # meta-analysis
-## metaanalysis per outcome
-## $GNTYP_OUT/rvtest/$PHENO/$DATASET/toMeta.GWAS.tab
-rm res2meta.swarm
-for item in $(tail -n +2 outputs/MODELs.txt);do 
-  dataset=$(echo $item | cut -d ":" -f 1)
-  outcomeS=$(echo $item | cut -d ":" -f 4 |tr , "\t")
-  for outcome in $outcomeS;do
-    if [ $outcome == "" ];then
-      continue
-    fi
-    echo "bash res2meta.sh $outcome $dataset" >> res2meta.swarm
-  done
+## meta_analysis per outcome
+# first prepare the output files
+
+
+
+# Reference Info file
+## Input file, chr*.info.gz is not always referencing the major allele
+## To reference major allele, create allChrs.Info and use ALT_FREQ in the later step
+for DATASET in $(cat Portfolios.txt) ;do
+  cat $GNTYP_OUT/SNPfilter/"$DATASET"_"$FILTER"_chr*.info | grep -v 'Rsq' > $GNTYP_OUT/SNPfilter/"$DATASET"_"$FILTER"_allChrs.Info
 done
 
-for item in $(tail -n +2 outputs/MODELs.txt);do 
-  dataset=$(echo $item | cut -d ":" -f 1)
-  outcomeS=$(echo $item | cut -d ":" -f 3 |tr , "\t")
-  for outcome in $outcomeS;do
-    if [ $outcome == "" ];then
-      continue
-    fi
-    echo "bash res2meta.sh $outcome $dataset" >> res2meta.swarm
-  done
+
+
+## For METAL, format the analysis results like the followings.
+# markerID  minorAllele majorAllele beta  se  maf P Rsq
+# chr10:64972 A G 0.201144  1.52208 0.00942 0.894865  0.55998
+# chr10:65030 A C 0.0774858 0.27058 0.44703 0.774595  0.40803
+echo '
+args <- commandArgs(trailingOnly = TRUE)
+OUTCOME=args[1]
+DATASET=args[2]
+FILTER=paste("_", args[3], "_", sep = "") # ="_maf001rsq3_"
+
+require(dplyr)
+require(data.table)
+infos <- fread(paste("../SNPfilter", "/", DATASET, FILTER, "allChrs.Info", sep=""))
+colnames(infos) <- c("SNP","ALT_Frq","Rsq")
+assoc <- fread(paste(OUTCOME, "/", DATASET, "/allChrs.assoc", sep=""))
+colnames(assoc) <- c("CHROM","POS","REF","ALT","N_INFORMATIVE","Test","Beta","SE","Pvalue")
+data <- left_join(assoc, infos, by = c("Test" = "SNP")) %>% 
+  filter(Beta < 5 & Beta > -5) %>% 
+  filter(!is.na(Pvalue)) %>% 
+  mutate(chr = paste("chr",CHROM, sep = "")) %>% 
+  mutate(markerID = paste(chr,POS, sep = ":"),
+         noflip = if_else(ALT_Frq <= 0.5, TRUE, FALSE),
+         minorAllele = if_else(noflip, as.character(ALT), as.character(REF)),
+         majorAllele = if_else(noflip, as.character(REF), as.character(ALT)),
+         beta = ifelse(noflip, Beta, Beta*(-1)),
+         se = SE,
+         P = Pvalue,
+         maf = if_else(noflip, ALT_Frq, 1 - ALT_Frq)) %>% 
+  select(markerID, minorAllele, majorAllele, beta, se, maf, P, Rsq)
+write.table(data, file=paste(OUTCOME, "/", DATASET, "/toMeta.GWAS.tab", sep = ""), quote = F, sep = "\t", row.names = F)
+' > _metal_input.R
+
+# Grip association test results from rvtest and convert it for the metal input
+WORKDIR=$(pwd)
+rm _metal_input.swarm
+for I in $(tail -n +1 _rvtests_done.txt) ;do
+  DATASET=$(echo $I | cut -d "," -f 2)
+  OUTCOME=$(echo $I | cut -d "," -f 3)
+  echo "
+  cd $GNTYP_OUT/rvtest;\
+  rm -rf $OUTCOME/$DATASET;\
+  mkdir  $OUTCOME/$DATASET;\
+  cat $OUTCOME/chr*/$DATASET.SingleWald.assoc | grep -v N_INFORMATIVE > $OUTCOME/$DATASET/allChrs.assoc;\
+  Rscript --vanilla $WORKDIR/_metal_input.R $OUTCOME $DATASET $FILTER
+  " >> _metal_input.swarm
 done
 
-rm -rf swarm_res2meta
-swarm -f res2meta.swarm -g 8 -p 2 -b 10 --time=2:00:00 --logdir ./swarm_res2meta
-# 30 min. can reduce number in -b. 
 
-# metal
-## create metal.txt and conduct swarm
-for OUTCOME in $(ls $GNTYP_OUT/rvtest); do
- echo "
+# Do the same thing for cox results. 
+for I in $(tail -n +1 _surv_done.txt) ;do
+  DATASET=$(echo $I | cut -d "," -f 2)
+  OUTCOME=$(echo $I | cut -d "," -f 3)
+  echo "
+  cd $GNTYP_OUT/surv;\
+  rm -rf $OUTCOME/$DATASET;\
+  mkdir  $OUTCOME/$DATASET;\
+  cat $OUTCOME/chr*/$DATASET*.txt | grep -v Pvalue | sed 's/:/\t/g' | sed 's/_/\t/' | sed 's/_/\t/' |\
+  awk '"'{print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$1":"$2"\t"$7"\t"$8"\t"$9}'"' > $OUTCOME/$DATASET/allChrs.assoc;\
+  Rscript --vanilla $WORKDIR/_metal_input.R $OUTCOME $DATASET $FILTER
+  " >> _metal_input.swarm
+done
+
+
+# Also for glmm resutls
+for I in $(tail -n +1 _long_done.txt) ;do
+  DATASET=$(echo $I | cut -d "," -f 2)
+  OUTCOME=$(echo $I | cut -d "," -f 3)
+  echo "
+  cd $GNTYP_OUT/long;\
+  rm -rf $OUTCOME/$DATASET;\
+  mkdir  $OUTCOME/$DATASET;\
+  cat $OUTCOME/chr*/$DATASET*.txt | grep -v Pvalue | sed 's/:/\t/g' | sed 's/_/\t/' | sed 's/_/\t/' |\
+  awk '"'{print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$1":"$2"\t"$7"\t"$8"\t"$9}'"' > $OUTCOME/$DATASET/allChrs.assoc;\
+  Rscript --vanilla $WORKDIR/_metal_input.R $OUTCOME $DATASET $FILTER
+  " >> _metal_input.swarm
+done
+swarm -f _metal_input.swarm -g 10 -p 2 -b 30 --time=0:10:00 --module R --logdir ./swarm_metal --devel
+
+
+
+
+
+
+
+# Create metal.txt 
+rm -rf $GNTYP_OUT/meta 
+mkdir $GNTYP_OUT/meta
+for ANALYSIS in "rvtest" "long" "surv"; do
+  for OUTCOME in $(ls $GNTYP_OUT/$ANALYSIS); do
+    mkdir -p $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME
+    echo "
     SCHEME STDERR
     AVERAGEFREQ ON
     MINMAXFREQ ON
-    " > $GNTYP_OUT/rvtest/$OUTCOME/metal.txt
-done
-
-for item in $(tail -n +2 outputs/MODELs.txt);do 
-  dataset=$(echo $item | cut -d ":" -f 1)
-  outcomeS=$(echo $item | cut -d ":" -f 4 |tr , "\t")
-  for outcome in $outcomeS;do
-    if [ $outcome == "" ];then
-      continue
-    fi
+    " > $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/metal.txt
+    for DATASET in $(tail -n +1 _"$ANALYSIS"*_done.txt | grep "$OUTCOME"$ | cut -d ',' -f2);do
+      echo "
+      MARKER markerID
+      ALLELE minorAllele majorAllele
+      FREQ   maf
+      EFFECT beta
+      STDERR se
+      PVALUE P
+      PROCESS $GNTYP_OUT/$ANALYSIS/$OUTCOME/$DATASET/toMeta.GWAS.tab
+      " >> $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/metal.txt
+      echo "$DATASET" >> $GNTYP_OUT/meta/temp.txt
+    done
     echo "
-    MARKER markerID
-    ALLELE minorAllele majorAllele
-    FREQ   maf
-    EFFECT beta
-    STDERR se
-    PVALUE P
-    PROCESS $GNTYP_OUT/rvtest/$outcome/$dataset/toMeta.GWAS.tab
-    " >> $GNTYP_OUT/rvtest/$outcome/metal.txt
+    OUTFILE $GNTYP_OUT/$ANALYSIS/$OUTCOME/meta .tbl
+    ANALYZE HETEROGENEITY
+    QUIT
+    " >> $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/metal.txt
+    DATASETS=$(paste -s $GNTYP_OUT/meta/temp.txt | sed 's/\t/,/g')
+    echo "$ANALYSIS"___"$OUTCOME"___"$DATASETS" >>  $GNTYP_OUT/meta/meta_cohorts.txt
+    rm $GNTYP_OUT/meta/temp.txt
   done
 done
 
-for OUTCOME in $(ls $GNTYP_OUT/rvtest); do
-  echo "
-  OUTFILE $GNTYP_OUT/rvtest/$OUTCOME/meta .tbl
-  ANALYZE HETEROGENEITY
-  QUIT
-  " >> $GNTYP_OUT/rvtest/$OUTCOME/metal.txt
-done
+# Note MMSE for PARKFIT was only cross-sectional, so need to combine this with glmm model analyses
+# Create the updated version and rename originals.
+cp $GNTYP_OUT/meta/long/MMSE/metal.txt $GNTYP_OUT/meta/long/MMSE/metal_original.txt
+head -n 41  $GNTYP_OUT/meta/long/MMSE/metal_original.txt > $GNTYP_OUT/meta/long/MMSE/metal.txt
+sed -n '7,13p' $GNTYP_OUT/meta/rvtest/MMSE/metal.txt >> $GNTYP_OUT/meta/long/MMSE/metal.txt
+tail -n +42  $GNTYP_OUT/meta/long/MMSE/metal_original.txt >> $GNTYP_OUT/meta/long/MMSE/metal.txt
+mv $GNTYP_OUT/meta/rvtest/MMSE/metal.txt $GNTYP_OUT/meta/rvtest/MMSE/metal_1cohort.txt 
 
-rm metal.swarm
-for OUTCOME in $(ls $GNTYP_OUT/rvtest); do
-  echo metal $GNTYP_OUT/rvtest/$OUTCOME/metal.txt >> metal.swarm
-done
 
-# MMSE Only one cohort. Cannot do metal at this moment.
-grep -v "MMSE" metal.swarm > metal.swarm2
+rm _metal.swarm
+for FILE in $(ls $GNTYP_OUT/meta/*/*/metal.txt); do
+  echo "metal $FILE" >> _metal.swarm
+done
 
 # conduct swarm
 swarm -f test.swarm -g 6 -p 2 -b 2 --time=1:00:00 --module metal --logdir ./swarm_metal --module metal
-
-
 
