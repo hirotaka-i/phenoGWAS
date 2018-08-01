@@ -644,13 +644,62 @@ for I in $(tail -n +2 outputs/MODELs.txt);do
   done
 done
 
-swarm -f _long.swarm -g 1.5 -p 2 -b 24 --time=1:00:00 --module R --logdir ./swarm_long --devel
+swarm -f _long.swarm -g 1.5 -p 2 -b 24 --time=2:00:00 --module R --logdir ./swarm_long --devel
+
+# For glmm_slope
+head -n 28 _long.R > _long_slope.R
+echo '
+  MODEL = paste(OUTCOME, "~", "`", SNPs[x], "`+ `", SNPs[x], "`*YEARfDIAG + ", paste(COVs, collapse="+"), "+(1 + YEARfDIAG|ID)", sep = "")
+  lmer(eval(parse(text = MODEL)), data = cohort_snp)
+  
+  
+  testLmer = try(lmer(eval(parse(text = MODEL)), data = cohort_snp),silent = T)
+  if(class(testLmer)[1]=="try-error"){
+    sumstat=rep("DROP",6)
+  }else{
+    temp = summary(testLmer)
+    temp1 = temp$coefficients
+    GET = nrow(temp1)
+    if(grep(SNPs[x], rownames(temp1)[GET]) %>% length == 0){ # In this case, SNP is dropeed from the model
+      sumstat=rep(NA,6)
+    }else{
+      RES = temp1[GET,] # The first row is intercept
+      PV_APPROX = 2 * pnorm(abs(RES[3]), lower.tail=F) # df is enough large for approximation
+      OBS_N = paste(length(temp$residuals), "_", temp$ngrps, sep="")
+      sumstat <- c(SNPs[x], OBS_N, RES[3], RES[1], RES[2], PV_APPROX)
+    }
+  }
+  return(sumstat)
+}
+
+temp = lapply(1:length(SNPs), glmm.listfunc)
+temp2 = do.call(rbind, temp)
+
+attributes(temp2)$dimnames[[2]]=c("SNP", "OBS_N", "Tvalue", "Beta", "SE", "Pv_approx")
+NEWDIR = paste("/data/LNG/Hirotaka/progGWAS/long/", OUTCOME, "_slope/", chrNUM, sep = "")
+dir.create(NEWDIR, recursive = T, showWarnings = F)
+write.table(temp2, paste(NEWDIR, "/", DATASET, ".", ITER, ".txt", sep=""), row.names = F, quote = F, sep = "\t")
+' >> _long_slope.R
+
+rm _long_slope.swarm _long_slope_done.txt
+for I in $(tail -n +2 outputs/MODELs.txt);do
+  OUTCOMEs=$(echo $I | cut -d ":" -f 6 | tr , "\t")
+  DATASET=$(echo $I | cut -d ":" -f 1)
+  for OUTCOME in $OUTCOMEs; do
+    echo "long,$DATASET,$OUTCOME" >> _long_slope_done.txt
+    for J in $(ls $FOLDER/$DATASET/);do
+      chrNUM=$(echo $J | cut -d "." -f1)
+      ITER=$(echo $J | cut -d "." -f2)
+      echo "Rscript --vanilla _long_slope.R $OUTCOME $DATASET $chrNUM $ITER $FOLDER" >> _long_slope.swarm
+    done
+  done
+done
 
 
 
+swarm -f _long_slope.swarm -g 1.5 -p 2 -b 2 --time=2:00:00 --module R --logdir ./swarm_long --devel
 
-
-
+swarm -f test.swarm -g 1.5 -p 2 -b 2 --time=2:00:00 --module R --logdir ./swarm_test --devel
 
 
 
@@ -771,7 +820,7 @@ for I in $(tail -n +1 _long_done.txt) ;do
   Rscript --vanilla $WORKDIR/_metal_input.R $OUTCOME $DATASET $FILTER
   " >> _metal_input.swarm
 done
-swarm -f _metal_input.swarm -g 10 -p 2 -b 30 --time=0:10:00 --module R --logdir ./swarm_metal --devel
+swarm -f _metal_input.swarm -g 10 -p 2 -b 30 --time=0:20:00 --module R --logdir ./swarm_metal --devel
 
 
 
@@ -828,5 +877,26 @@ for FILE in $(ls $GNTYP_OUT/meta/*/*/metal.txt); do
 done
 
 # conduct swarm
-swarm -f test.swarm -g 6 -p 2 -b 2 --time=1:00:00 --module metal --logdir ./swarm_metal --module metal
+swarm -f _metal.swarm -g 6 -p 2 -b 2 --time=1:00:00 --module metal --logdir ./swarm_metal --module metal
+
+
+
+
+
+
+
+
+
+
+
+
+
+# DATA CHECKING COMMAND
+sort -gk 7 /Volumes/Hirotaka/progGWAS/rvtest/MMSE_slope/PPMI/toMeta.GWAS.tab > sorted_test.tab
+grep 'chr1:' sorted_test.tab | head -n 20
+
+
+grep '155205634\|155206037\|155206167' sorted_test2.tab
+
+
 
