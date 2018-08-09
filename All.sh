@@ -375,7 +375,7 @@ Rscript --vanilla _slope.R
 ###############################################
 # rvtest - for outcomes per individual ########
 ###############################################
-rm -f _rvtest.swarm _rvtests_done.txt
+rm -f _rvtest.swarm _rvtest_done.txt
 # For binomial outcomes (logistic regression)
 for item in $(tail -n +2 outputs/MODELs.txt);do 
   DATASET=$(echo $item | cut -d ":" -f 1)
@@ -385,7 +385,7 @@ for item in $(tail -n +2 outputs/MODELs.txt);do
     if [ $OUTCOME == "" ];then
       continue
     fi
-    echo "rvtest_binom,$DATASET,$OUTCOME" >> _rvtests_done.txt
+    echo "rvtest_binom,$DATASET,$OUTCOME" >> _rvtest_done.txt
     for CHNUM in {1..22};do
       echo "
       mkdir -p $GNTYP_OUT/rvtest/$OUTCOME/chr$CHNUM;\
@@ -408,7 +408,7 @@ for item in $(tail -n +2 outputs/MODELs.txt);do
     if [ $OUTCOME == "" ];then
       continue
     fi
-    echo "rvtest_cont,$DATASET,$OUTCOME" >> _rvtests_done.txt
+    echo "rvtest_cont,$DATASET,$OUTCOME" >> _rvtest_done.txt
     for CHNUM in {1..22};do
       echo "
       mkdir -p $GNTYP_OUT/rvtest/$OUTCOME/chr$CHNUM;\
@@ -426,21 +426,21 @@ done
 for item in $(tail -n +2 outputs/long_slope_outcomes.txt);do
   OUTCOME=$(echo $item | cut -d ":" -f 2)
   DATASET=$(echo $item | cut -d ":" -f 1)
-  echo "rvtest_slope,$DATASET,$OUTCOME" >> _rvtests_done.txt
+  echo "rvtest_slope,$DATASET,$OUTCOME" >> _rvtest_done.txt
   for CHNUM in {1..22};do
     echo "
     mkdir -p $GNTYP_OUT/rvtest/$OUTCOME/chr$CHNUM;\
     rvtest --noweb --hide-covar --rangeFile $GNTYP_OUT/SNPfilter/$DATASET"_"$FILTER"_"chr$CHNUM.txt \
-	--inVcf $GNTYP_IN/$DATASET/chr$CHNUM.dose.vcf.gz \
-	--pheno outputs/long_slope/$DATASET.slope --pheno-name $OUTCOME \
-	--out $GNTYP_OUT/rvtest/$OUTCOME/chr$CHNUM/$DATASET --single wald
+  --inVcf $GNTYP_IN/$DATASET/chr$CHNUM.dose.vcf.gz \
+  --pheno outputs/long_slope/$DATASET.slope --pheno-name $OUTCOME \
+  --out $GNTYP_OUT/rvtest/$OUTCOME/chr$CHNUM/$DATASET --single wald
     " >> _rvtest.swarm
   done
 done
 
 
 rm -rf swarm_rvtest
-swarm -f _rvtest.swarm --time=3:00:00 -p 2 -b 8 --logdir ./swarm_rvtest --module rvtests --devel
+swarm -f _rvtest.swarm --time=6:00:00 -p 2 -b 8 --logdir ./swarm_rvtest --module rvtests --devel
 # maf001rsq3.. longetst time was 4:30:00 (b4) so 2hr for each job would be enough
 
 # Oslo didn't finish in 2:00
@@ -590,13 +590,13 @@ library(lme4)
 # Read data
 ## DATASET with TSTART and TSTOP
 cohort=fread(paste("outputs/long/", DATASET, ".cont", sep = "")) %>% arrange(IID, YEARfDIAG) %>% mutate(ID = paste(FID, IID, sep="_"))
-COVs = names(cohort)[grep("^FEMALE|^YEARSEDUC|^FAMILY_HISTORY|^AAO|^YEARfDIAG|^DOPA|^AGNOIST", names(cohort))]
+COVs = names(cohort)[grep("^FEMALE|^YEARSEDUC|^FAMILY_HISTORY|^AAO|^YEARfDIAG|^DOPA|^AGNOIST|^PC", names(cohort))]
 
 ## Imputed data
 SNPset = fread(paste("zcat -f ", FOLDER, "/", DATASET, "/", chrNUM, ".", ITER, ".trans.txt.gz", sep=""))
 SNPs = names(SNPset)[-(1:2)] # 1 ID, 2 DOSE, SNP name starts from 3
 ## Merge
-cohort_snp = left_join(cohort, SNPset, by = c("IID"="ID"))
+cohort_snp = left_join(cohort, SNPset, by = c("IID"="ID")) # !!!!!!!NO PCs!!!!!!!ID IID IS IT RIGHT!!!!!!!!!!!!!!????????????
 
 
 glmm.listfunc = function(x){
@@ -697,10 +697,7 @@ done
 
 
 
-swarm -f _long_slope.swarm -g 1.5 -p 2 -b 2 --time=2:00:00 --module R --logdir ./swarm_long --devel
-
-swarm -f test.swarm -g 1.5 -p 2 -b 2 --time=2:00:00 --module R --logdir ./swarm_test --devel
-
+swarm -f _long_slope.swarm -g 3 -p 2 -b 24 --time=3:00:00 --module R --logdir ./swarm_long_slope --devel
 
 
 
@@ -763,7 +760,9 @@ colnames(assoc) <- c("CHROM","POS","REF","ALT","N_INFORMATIVE","Test","Beta","SE
 data <- left_join(assoc, infos, by = c("Test" = "SNP")) %>% 
   filter(Beta < 5 & Beta > -5) %>% 
   filter(!is.na(Pvalue)) %>% 
-  mutate(chr = paste("chr",CHROM, sep = "")) %>% 
+  mutate(chr = paste("chr",CHROM, sep = ""),
+         ALT_Frq=as.numeric(ALT_Frq),
+         Beta=as.numeric(Beta)) %>% 
   mutate(markerID = paste(chr,POS, sep = ":"),
          noflip = if_else(ALT_Frq <= 0.5, TRUE, FALSE),
          minorAllele = if_else(noflip, as.character(ALT), as.character(REF)),
@@ -779,7 +778,7 @@ write.table(data, file=paste(OUTCOME, "/", DATASET, "/toMeta.GWAS.tab", sep = ""
 # Grip association test results from rvtest and convert it for the metal input
 WORKDIR=$(pwd)
 rm _metal_input.swarm
-for I in $(tail -n +1 _rvtests_done.txt) ;do
+for I in $(tail -n +1 _rvtest_done.txt) ;do
   DATASET=$(echo $I | cut -d "," -f 2)
   OUTCOME=$(echo $I | cut -d "," -f 3)
   echo "
@@ -820,17 +819,14 @@ for I in $(tail -n +1 _long_done.txt) ;do
   Rscript --vanilla $WORKDIR/_metal_input.R $OUTCOME $DATASET $FILTER
   " >> _metal_input.swarm
 done
-swarm -f _metal_input.swarm -g 10 -p 2 -b 30 --time=0:20:00 --module R --logdir ./swarm_metal --devel
-
-
-
-
-
+swarm -f _metal_input.swarm -g 10 -p 2 -b 60 --time=0:05:00 --module R --logdir ./swarm_metal --devel
 
 
 # Create metal.txt 
 rm -rf $GNTYP_OUT/meta 
 mkdir $GNTYP_OUT/meta
+
+###################LONG_slope, LONG, count number!! ####################
 for ANALYSIS in "rvtest" "long" "surv"; do
   for OUTCOME in $(ls $GNTYP_OUT/$ANALYSIS); do
     mkdir -p $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME
@@ -839,7 +835,7 @@ for ANALYSIS in "rvtest" "long" "surv"; do
     AVERAGEFREQ ON
     MINMAXFREQ ON
     " > $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/metal.txt
-    for DATASET in $(tail -n +1 _"$ANALYSIS"*_done.txt | grep "$OUTCOME"$ | cut -d ',' -f2);do
+    for DATASET in $(tail -n +1 _"$ANALYSIS"_done.txt | grep "$OUTCOME"$ | cut -d ',' -f2);do
       echo "
       MARKER markerID
       ALLELE minorAllele majorAllele
@@ -852,12 +848,12 @@ for ANALYSIS in "rvtest" "long" "surv"; do
       echo "$DATASET" >> $GNTYP_OUT/meta/temp.txt
     done
     echo "
-    OUTFILE $GNTYP_OUT/$ANALYSIS/$OUTCOME/meta .tbl
+    OUTFILE $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/meta .tbl
     ANALYZE HETEROGENEITY
     QUIT
     " >> $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/metal.txt
     DATASETS=$(paste -s $GNTYP_OUT/meta/temp.txt | sed 's/\t/,/g')
-    echo "$ANALYSIS"___"$OUTCOME"___"$DATASETS" >>  $GNTYP_OUT/meta/meta_cohorts.txt
+    echo "$ANALYSIS"___"$OUTCOME"___"$DATASETS" >>  _meta_done.txt
     rm $GNTYP_OUT/meta/temp.txt
   done
 done
@@ -877,16 +873,32 @@ for FILE in $(ls $GNTYP_OUT/meta/*/*/metal.txt); do
 done
 
 # conduct swarm
-swarm -f _metal.swarm -g 6 -p 2 -b 2 --time=1:00:00 --module metal --logdir ./swarm_metal --module metal
+swarm -f _metal.swarm -g 6 -p 2 -b 2 --time=1:00:00 --module metal --logdir ./swarm_metal --module metal --devel
+
+
+head -n +2 _metal.swarm > test.swarm
+swarm -f test.swarm -g 6 -p 2 --time=1:00:00 --module metal --logdir ./swarm_metal --module metal --devel
 
 
 
 
 
-
-
-
-
+# Filter the meta-analysis results
+# The Df threshold for the meta-analysis. using SNPs available more than 50% of the cohorts.
+## Note the calculation doesn't have decimals.
+rm -f _metathres.txt
+for i in $(cat _meta_done.txt);do
+  N_COHORTs=$(echo $i | sed 's/___/:/g' | cut -d ":" -f 3 | sed 's/,/\n/g' | wc -l)
+  echo $[(N_COHORTs) / 2 ]  >> _metathres.txt
+done
+paste -d '-' _meta_done.txt _metathres.txt > _meta_done_thres.txt
+## Filtering HetIsq <80 HetDf > half of the number of the available cohorts.
+ANALYSIS=surv
+for i in $(grep ^"$ANALYSIS" _meta_done_thres.txt);do
+  OUTCOME=$(echo $i | sed 's/___/:/g' | cut -d ":" -f 2)
+  THRES=$(echo $i | cut -d "-" -f 2)
+  awk '$14>'$THRES' {print $0}' $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/meta1.tbl | awk '$12<80' | sort -gk 10 > $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/meta2.tbl
+done
 
 
 
@@ -897,6 +909,3 @@ grep 'chr1:' sorted_test.tab | head -n 20
 
 
 grep '155205634\|155206037\|155206167' sorted_test2.tab
-
-
-
