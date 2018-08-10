@@ -82,7 +82,7 @@ swarm -f _SNPfilter.swarm --time=0:20:00 -g 3 -p 2 -b 3 --logdir ./swarm_SNPfilt
 
 
 
-
+fefe
 FILTER=maf001rsq3
 # Transpose SNPs like the following format for the analysis in R.
 ## ....format....
