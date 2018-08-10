@@ -901,6 +901,13 @@ for i in $(grep ^"$ANALYSIS" _meta_done_thres.txt);do
 done
 
 
+ANALYSIS=rvtest
+for i in $(grep ^"$ANALYSIS" _meta_done_thres.txt);do
+  OUTCOME=$(echo $i | sed 's/___/:/g' | cut -d ":" -f 2)
+  THRES=$(echo $i | cut -d "-" -f 2)
+  awk '$14>'$THRES' {print $0}' $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/meta1.tbl | awk '$12<80' | sort -gk 10 > $GNTYP_OUT/meta/$ANALYSIS/$OUTCOME/meta2.tbl
+done
+
 
 
 # DATA CHECKING COMMAND
