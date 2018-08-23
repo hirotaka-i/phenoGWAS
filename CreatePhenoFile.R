@@ -74,7 +74,7 @@ cat("compete step2 \n")
 #############################
 # Step3 
 ## prepare data&model for analysis 
-### for cross/lnsgl use rvtest
+### for lgsbl/lnsgl use pllnk
 ### for lncns/lnmxi/lnmxs/coxhm use R
 ### models.txt is recording a model.
 #############################
@@ -145,11 +145,11 @@ for(i in 1:length(DATASETs)){
   BinomTs_bl_i = temp %>% filter(V1>0) %>% select(NAMES) %>% t %>% as.vector # filter out NA outcomes and Var=0 outcomes
   if(length(BinomTs_bl_i) != 0){ # if there are such variables..
     binom_bl_new = binom_bl %>% select(FID, IID, FATID, MATID, SEX, BinomTs_bl_i)
-    write.table(binom_bl_new, paste("pheno/cross/", DATASETs[i], ".txt", sep = ""), row.names = F, quote = F, sep = "\t")
-    write.table(cov_bl_new, paste("pheno/cross/", DATASETs[i], "_cov.txt", sep = ""), row.names = F, quote = F, sep = "\t")
-    m1=paste("cross", DATASETs[i], BinomTs_bl_i, paste(COVs_bl_i, collapse = ","), sep = ";")
+    write.table(binom_bl_new, paste("pheno/lgsbl/", DATASETs[i], ".txt", sep = ""), row.names = F, quote = F, sep = "\t")
+    write.table(cov_bl_new, paste("pheno/lgsbl/", DATASETs[i], "_cov.txt", sep = ""), row.names = F, quote = F, sep = "\t")
+    m1=paste("lgsbl", DATASETs[i], BinomTs_bl_i, paste(COVs_bl_i, collapse = ","), sep = ";")
   }else{BinomTs_i_cs = "";m1="None"}
-  cat("    cross")
+  cat("    lgsbl")
 
   # Continuous outcomes (need to apply different model  when longitudinal data is not available)
   cont = plink_ltg %>% filter(DATASET == DATASETs[i])
@@ -173,9 +173,10 @@ for(i in 1:length(DATASETs)){
   if(length(ContTs_i_bl) != 0){ # if there are such variables..
     cont_bl = cont %>% filter(TSTART == 0) %>% select(FID, IID, FATID, MATID, SEX, ContTs_i_bl) %>% left_join(., PC, by = "IID")
     write.table(cont_bl, paste("pheno/lnsgl/", DATASETs[i], ".txt", sep = ""), row.names = F, quote = F, sep = "\t")
-    cov_bl_cont = cov_bl_new %>% rename(YEARfDIAG=BLDfDIAG) # replace BLDfDIAG -> YEARfDIAG 
+    COVs_bl_i_cont = gsub("BLDfDIAG", "YEARfDIAG", COVs_bl_i) # replace BLDfDIAG -> YEARfDIAG
+    cov_bl_cont = cov_bl %>% select(FID, IID, FATID, MATID, SEX, COVs_bl_i_cont) %>% left_join(., PC, by = "IID")
     write.table(cov_bl_cont, paste("pheno/lnsgl/", DATASETs[i], "_cov.txt", sep = ""), row.names = F, quote = F, sep = "\t")
-    m2=paste("lnsgl", ContTs_i_bl, paste(names(cov_bl_new)[-(1:5)], collapse = ","), sep = "_")
+    m2=paste("lnsgl", DATASETs[i], ContTs_i_bl, paste(COVs_bl_i_cont, collapse = ","), sep = ";")
     cat("    lnsgl")
   }else{ContTs_i_bl = ""; m2="None";cat("    NO_lnsgl")}
   # Longitudinal set: phenotype file with covariates (for R)
@@ -199,7 +200,7 @@ for(i in 1:length(DATASETs)){
       cohort_temp$OUTCOME = cohort_temp[, OUTCOME]
       cohort_temp2 = cohort_temp %>% select("IID", COVs_i_trans, "OUTCOME")
       cohort = cohort_temp2 %>% filter(!is.na(OUTCOME)) %>% arrange(IID, YEARfDIAG)
-      # Transform the data to the orthogonal to the cross-sectional space
+      # Transform the data to the orthogonal to the time-constant variables
       IIDs = unique(cohort$IID)
       cohort_trans = lapply(1:length(IIDs), trans.func)
       transdata = do.call(rbind, cohort_trans)
@@ -252,9 +253,9 @@ for(i in 1:length(DATASETs)){
       PHENOSURV = c(PHENOSURV, BinomT[j])
     }
   }
-  m5=paste("coxhm", DATASETs[i], PHENOSURV, paste(COVs2in, collapse = ","), sep = ";") 
+  m6=paste("coxhm", DATASETs[i], PHENOSURV, paste(COVs2in, collapse = ","), sep = ";") 
   cat("    coxhm \n")
-  models=c(models,m1,m2,m3,m4,m5)
+  models=c(models,m1,m2,m3,m4,m5,m6)
 }
 data.frame(V1=models) %>% filter(V1!="None") %>% write.table("models.txt", col.names=F, row.names = F, quote = F)
 cat("all complete \n")
