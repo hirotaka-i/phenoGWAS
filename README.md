@@ -4,10 +4,10 @@
 Recently Mike reported 92 risk variants for PD (https://doi.org/10.1101/388165). I added some more variants and anlyzed binomial/continous traits with the following 5 models adjusted for sex, years of education, family history, age at diagnosis, years from diagnosis, levodopa usage, DA usage, and PC1 to PC5.
 
 1. lgsbl: Logistic regression for baseline binomial traits
-2. coxhm: Cox hazard model until the patient has the binomial outcome. 
+2. coxhm: Cox hazard model for a binomial outcome for those who didn't have the symptom at the baseline 
 3. lnmxi: Linear mixed effect modeling of snp on intercept for the (continous) outcome
 4. lnmxs: Linear mixed effect modeling of snp on slope (time-dependent-change) of the outcome
-5. lncns: Conditional linear modeling of snp on slope (essentially similar to lnmxi, but the model is expansion of paired t-test, )
+5. lncns: Conditional linear modeling of snp on slope (essentially similar to lnmxi, the model is more like an expansion of paired t-test)
     
 In total, 52 models were analyzed for each variants.
 
