@@ -16,11 +16,11 @@ In total, 52 models were analyzed for each variants.
 $n = number\ of\ models\ tested$ = 52
 
 
-1. $0.05 \le P$
-2. $\frac{0.05}{n} \le P < 0.05$
-3. $\frac{0.05}{92} \le P < \frac{0.05}{n}$     
-4. $\frac{0.05}{92 * n} \le P < \frac{0.05}{92}$
-5. $ P < \frac{0.05}{92 * n}$
+1. 0.05 < P
+2. (0.05 / n) < P < 0.05
+3. (0.05 / 92 < P < (0.05 / n)     
+4. (0.05 / 92 / n ) < P < (0.05 / 92)
+5. P < (0.05 /92 / n )
 
 The interpretation would be,
 1. no signal    
