@@ -1,7 +1,7 @@
 # progression GWAS project
 
 ## Pilot analysis for variants in interest
-Recently Mike reported 92 risk variants for PD (https://doi.org/10.1101/388165). I added some more variants and anlyzed binomial/continous traits with the following 5 models adjusted for sex, years of education, family history, age at diagnosis, years from diagnosis, levodopa usage, DA usage, and PC1 to PC5.
+Recently Mike reported 92 risk variants for PD (https://doi.org/10.1101/388165). I added some more variants (such as GBA variatns and APOE1) and anlyzed binomial/continous traits with the following 5 models adjusted for sex, years of education, family history, age at diagnosis, years from diagnosis, levodopa usage, DA usage, and PC1 to PC5.
 
 1. lgsbl: Logistic regression for baseline binomial traits
 2. coxhm: Cox hazard model for a binomial outcome for those who didn't have the symptom at the baseline 
