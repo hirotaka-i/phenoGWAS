@@ -1,19 +1,3 @@
-Jupyter Notebook
-sand
-Last Checkpoint: 1時間前
-(unsaved changes)
-Current Kernel Logo
-Python 3 
-File
-Edit
-View
-Insert
-Cell
-Kernel
-Widgets
-Help
-
-
 # progression GWAS project
 ​
 ## Pilot analysis for variants in interest
@@ -51,18 +35,29 @@ Variants on x axis and models on y axis. The bar at right is not showing numbers
 A couple of interesting points. conditional linear models for slope are the most sensitive analysis. (return more darker cells.)    
 APOE1 is associated with insomnia, MMSE, and UPDRS1 on multple different models, and it seems sensible. 
     
-I also conducted GWAS (integer genotypes imputed and filtered by maf>0.05 and Rsq > 0.8) but at this moment, models with binomial outcomes (lgsbl/coxhm) were reporting only sub-significant variants. (5e-7). And lncns analyses reported too many variants (9K+). Probably need to filter them with stricter threshold.
+I also conducted GWAS (integer genotypes imputed and filtered by maf>0.05 and Rsq > 0.8) but at this moment, models with binomial outcomes (lgsbl/coxhm) were reporting only sub-significant variants. (5e-7). And lncns analyses reported too many variants (9K+). Probably need to filter them with stricter thresholds.
 ​
 ## Next step
 The above analyses were using old data I used for the previous 31 SNPs analyses. Some of you have alreaady sent me the updated files and I am looking forward to combine all the available updated files and do the anaylses again!
 ​
 ## Data request
+If you can update the following data, please let me know. 
+​
 1. Covariates:  sex, years of education, family history, age at diagnosis, years from diagnosis, levodopa usage, DA usage, and PC1 to PC5
 2. HY scale
 2. UPDRS1-4 including scores for each item
 3. Cognitive test (MoCA or MMSE) total score
 4. Smell test score
 5. SEADL
-6. Diagnosis of Dementia/Cognitive impairment, Constipation, Depression, dyskinesia, motor fluctuation, insomnia, daytime sleepiness
+6. Diagnosis of Dementia/Cognitive impairment, Constipation, Depression, dyskinesia, motor fluctuation, insomnia, daytime sleepiness, hyposmia    
 ​
-In addtion, I am planning to conduct pharmacogenetics GWAS withn PPMI and other available datasets. If you can collaborate with me on this, please semd me the data from the any test of drug responsiveness (on-off test), and/or the date started levodopa/DA treatment.
+​
+In addtion, I am planning to conduct pharmacogenetics GWAS withn PPMI and other available datasets. If you can also collaborate on this, please semd me the data from the any test data of **drug responsiveness** (on-off test/UPDRS measured twice a day...), and/or **the date started levodopa/DA treatment for each patients** so that I can distinguish the UPDRS, HY before and after the treatment initiation.
+
+​
+
+​
+
+​
+
+​
