@@ -113,6 +113,14 @@ trans.func = function(i){
   }
 }
 
+
+# Filter the binomial outcomes happen more than threshold number.
+Vfilter=function(DATA, THRES){
+  return(names(DATA)[DATA>THRES])
+}
+
+
+
 for(i in 1:length(DATASETs)){
   cat(DATASETs[i])
   # Baseline for binomial outcomes
@@ -138,13 +146,10 @@ for(i in 1:length(DATASETs)){
   cov_bl_new = cov_bl %>% select(FID, IID, FATID, MATID, SEX, COVs_bl_i) %>% left_join(., PC, by = "IID")
     
   # Binomial outcomes
-  binom_bl = BL %>% select(FID, IID, FATID, MATID, SEX, BinomT)
-  # Avaial phenos for dataset_i 
-  temp = binom_bl[,6:ncol(binom_bl)] %>% summarise_all(funs(var(.,na.rm = T))) %>% t %>% as.data.frame
-  temp$NAMES = rownames(temp) # rownames were converted to the covariates.
-  BinomTs_bl_i = temp %>% filter(V1>0) %>% select(NAMES) %>% t %>% as.vector # filter out NA outcomes and Var=0 outcomes
+  BinomTs_bl_i = BL %>% mutate_at(vars(BinomT), funs(ifelse(.==2, 1, 0))) %>% 
+    summarise_at(vars(BinomT), funs(sum)) %>% Vfilter(., 19) # outcomes less than 20 are eliminated
   if(length(BinomTs_bl_i) != 0){ # if there are such variables..
-    binom_bl_new = binom_bl %>% select(FID, IID, FATID, MATID, SEX, BinomTs_bl_i)
+    binom_bl_new = BL %>% select(FID, IID, FATID, MATID, SEX, BinomTs_bl_i)
     write.table(binom_bl_new, paste("pheno/lgsbl/", DATASETs[i], ".txt", sep = ""), row.names = F, quote = F, sep = "\t")
     write.table(cov_bl_new, paste("pheno/lgsbl/", DATASETs[i], "_cov.txt", sep = ""), row.names = F, quote = F, sep = "\t")
     m1=paste("lgsbl", DATASETs[i], BinomTs_bl_i, paste(COVs_bl_i, collapse = ","), sep = ";")
@@ -174,7 +179,7 @@ for(i in 1:length(DATASETs)){
     cont_bl = cont %>% filter(TSTART == 0) %>% select(FID, IID, FATID, MATID, SEX, ContTs_i_bl) %>% left_join(., PC, by = "IID")
     write.table(cont_bl, paste("pheno/lnsgl/", DATASETs[i], ".txt", sep = ""), row.names = F, quote = F, sep = "\t")
     COVs_bl_i_cont = gsub("BLDfDIAG", "YEARfDIAG", COVs_bl_i) # replace BLDfDIAG -> YEARfDIAG
-    cov_bl_cont = cov_bl %>% select(FID, IID, FATID, MATID, SEX, COVs_bl_i_cont) %>% left_join(., PC, by = "IID")
+    cov_bl_cont = BL %>% select(FID, IID, FATID, MATID, SEX, COVs_bl_i_cont) %>% left_join(., PC, by = "IID")
     write.table(cov_bl_cont, paste("pheno/lnsgl/", DATASETs[i], "_cov.txt", sep = ""), row.names = F, quote = F, sep = "\t")
     m2=paste("lnsgl", DATASETs[i], ContTs_i_bl, paste(COVs_bl_i_cont, collapse = ","), sep = ";")
     cat("    lnsgl")
@@ -192,14 +197,14 @@ for(i in 1:length(DATASETs)){
     m3=paste("lnmxi", DATASETs[i], ContTs_i_lt, paste(COVs_i_lt, collapse = ","), sep = ";")
     m4=paste("lnmxs", DATASETs[i], ContTs_i_lt, paste(COVs_i_lt, collapse = ","), sep = ";")    
     cat("    lnmxi/lnmxs")
-      
+
     # Conditinal regression model
     COVs_i_trans = COVs_i_lt[grep("^YEARfDIAG|^DOPA|^AGONIST", COVs_i_lt)]
     for (OUTCOME in ContTs_i_lt){
       cohort_temp = cont_new
       cohort_temp$OUTCOME = cohort_temp[, OUTCOME]
       cohort_temp2 = cohort_temp %>% select("IID", COVs_i_trans, "OUTCOME")
-      cohort = cohort_temp2 %>% filter(!is.na(OUTCOME)) %>% arrange(IID, YEARfDIAG)
+      cohort = cohort_temp2 %>% filter(complete.cases(.)) %>% arrange(IID, YEARfDIAG)
       # Transform the data to the orthogonal to the time-constant variables
       IIDs = unique(cohort$IID)
       cohort_trans = lapply(1:length(IIDs), trans.func)
@@ -208,7 +213,7 @@ for(i in 1:length(DATASETs)){
     }
     m5=paste("lncns", DATASETs[i], ContTs_i_lt, paste(COVs_i_trans, collapse = ","), sep = ";")
     cat("    lncns")
-  }else{ContTs_i_lt = ""; m3="None";m4="None";m5="None";cat("  No continous trait for longitudinal analysis")}   
+  }else{ContTs_i_lt = ""; m3="None";m4="None";m5="None";cat("  No continous trait for longitudinal analysis")}
 
   # Survival outcome
   PHENOSURV = c()
@@ -247,13 +252,17 @@ for(i in 1:length(DATASETs)){
       data.frame %>% arrange(IID, TSTART) %>% 
       filter(!is.na(OUTCOME)) # the basially last follow-up data will be erased (Right censored)
     
-    if(nrow(cohort)!=0 & var(cohort$OUTCOME, na.rm = T) != 0){
+    N_of_event = cohort %>% summarise_at(vars(OUTCOME), funs(sum(.,na.rm = T))) #outcome should be more than 19.
+    
+    if(nrow(cohort)!=0 & N_of_event > 19){
       cohort %>% left_join(., PC, by = c("IID")) %>% 
         write.table(., paste("pheno/coxhm/", BinomT[j], "_", DATASETs[i], ".txt", sep = ""), row.names = F, quote = F, sep = "\t")
       PHENOSURV = c(PHENOSURV, BinomT[j])
     }
   }
-  m6=paste("coxhm", DATASETs[i], PHENOSURV, paste(COVs2in, collapse = ","), sep = ";") 
+  if(length(PHENOSURV)==0){m6=NULL}else{
+    m6=paste("coxhm", DATASETs[i], PHENOSURV, paste(COVs2in, collapse = ","), sep = ";")
+  }
   cat("    coxhm \n")
   models=c(models,m1,m2,m3,m4,m5,m6)
 }
