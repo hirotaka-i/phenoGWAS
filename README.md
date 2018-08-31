@@ -1,44 +1,41 @@
 # progression GWAS project
 
 ## Pilot analysis for variants in interest
-Recently Mike reported 92 risk variants for PD (https://doi.org/10.1101/388165). I added some more variants (such as GBA variatns and APOE1) and anlyzed binomial/continous traits with the following 5 models adjusted for sex, years of education, family history, age at diagnosis, years from diagnosis, levodopa usage, DA usage, and PC1 to PC5.
+Recently Mike reported 92 risk variants for PD (https://doi.org/10.1101/388165). I added some more variants with these variants (such as GBA variatns and APOE1) and anlyzed binomial/continous traits with the following 5 models adjusted for sex, years of education, family history, age at diagnosis, years from diagnosis, levodopa usage, DA usage, and PC1 to PC5.
 
 1. lgsbl: Logistic regression for baseline binomial traits
 2. coxhm: Cox hazard model for a binomial outcome for those who didn't have the symptom at the baseline 
 3. lnmxi: Linear mixed effect modeling of snp on intercept for the (continous) outcome
 4. lnmxs: Linear mixed effect modeling of snp on slope (time-dependent-change) of the outcome
-5. lncns: Conditional linear modeling of snp on slope (essentially similar to lnmxi, the model is more like an expansion of paired t-test)
     
 In total, 52 models were analyzed for each variants.
 
 ## Visualized the strength of the associations
-92 variants in Meta-5.    
-$n = number\ of\ models\ tested$ = 52
 
+$N_t$ = Number of tests per variants
 
-1. 0.05 < P
-2. (0.05 / n) < P < 0.05
-3. (0.05 / 92 < P < (0.05 / n)     
-4. (0.05 / 92 / n ) < P < (0.05 / 92)
-5. P < (0.05 /92 / n )
+$N_v$ = Number of variants per test
 
-The interpretation would be,
-1. no signal    
+1. $0.05 < P$
+2. $0.05 / N_t < P < 0.05$
+3. $ 0.05 / N_v < P < 0.05 / N_t $     
+4. $ 0.05 / (N_t * N_v) < P <  0.05 / N_v $
+5. $ P < 0.05 / (N_t * N_v) $
+
+The interpretation would be
+1. no signal
 2. raw P < 0.05
-3. FDR 0.05 across traits
-4. FDR 0.05 across 92 variants 
-5. FDR 0.05 across traits x 92 variants
+3. significant after bonferroni adjustment for Number of tests per variant
+4. significant after bonferroni adjustment for Number of variants per test
+5. significant after bonferroni adjustment for all tests
 
-![Figure1](fig/output.png)
+![Figure1](fig/output2.png)
 Figure1: 
-Variants on x axis and models on y axis. The bar at right is not showing numbers properly but each color is corresponding to each level of significance defined above (deeper color == stronger association). The same trait analyzed by different models are close each other. So a horizontal line indicates somewhat consistent phenotype-genotype associations.    
-A couple of interesting points. conditional linear models for slope are the most sensitive analysis. (return more darker cells.)    
-APOE1 is associated with insomnia, MMSE, and UPDRS1 on multple different models, and it seems sensible. 
-    
-I also conducted GWAS (integer genotypes imputed and filtered by maf>0.05 and Rsq > 0.8) but at this moment, models with binomial outcomes (lgsbl/coxhm) were reporting only sub-significant variants. (5e-7). And lncns analyses reported too many variants (9K+). Probably need to filter them with stricter thresholds.
+Variants on y axis and outcome(\_model) on x axis. The bar at right is showing the level of significance defined above (deeper color == stronger association, white == no data available).    
+I also conducted GWAS (integer genotypes imputed and filtered by maf>0.05 and Rsq > 0.8) but the results were all sub-significant. (5e-7).
 
 ## Next step
-The above analyses were using old data I used for the previous 31 SNPs analyses. Some of you have alreaady sent me the updated files and I am looking forward to combine all the available updated files and do the anaylses again!
+The above analyses were using old data I used for the previous 31 SNPs analyses. Some of you have alreaady sent me the updated clincial files and I am looking forward to combine all the available updated files and do the GWAS anaylses again!
 
 ## Data request
 If you can update the following data, please let me know. 
