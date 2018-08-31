@@ -29,7 +29,7 @@ The interpretation would be
 4. significant after bonferroni adjustment for Number of variants per test
 5. significant after bonferroni adjustment for all tests
 
-![Figure1](fig/output2.png)
+![Figure1](fig/output3.png)
 Figure1: 
 Variants on y axis and outcome(\_model) on x axis. The bar at right is showing the level of significance defined above (deeper color == stronger association, white == no data available).    
 I also conducted GWAS (integer genotypes imputed and filtered by maf>0.05 and Rsq > 0.8) but the results were all sub-significant. (5e-7).
