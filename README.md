@@ -49,4 +49,4 @@ If you can update the following data, please let me know.
 6. Diagnosis of Dementia/Cognitive impairment, Constipation, Depression, dyskinesia, motor fluctuation, insomnia, daytime sleepiness, hyposmia        
     
 ### In addtion..
-I am planning to conduct pharmacogenetics GWAS withn PPMI and other available datasets. If you can also collaborate on this, please semd me the data from the any test data of **drug responsiveness** (on-off test/UPDRS measured twice a day...), and/or **the date started levodopa/DA treatment for each patients** so that I can distinguish the UPDRS, HY before and after the treatment initiation.
+I am planning to conduct pharmacogenetics GWAS withn PPMI and other available datasets. If you can also collaborate on this, please semd me the data from the any test data of **drug responsiveness** (on-off test/UPDRS measured twice a day, etc.), and/or **the date started levodopa/DA treatment for each patients** along with other data measuring motor features so that I can distinguish the observations before and after the treatment initiation.
