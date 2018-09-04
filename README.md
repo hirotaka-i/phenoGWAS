@@ -7,8 +7,7 @@ Recently Mike reported 92 risk variants for PD (https://doi.org/10.1101/388165).
 2. coxhm: Cox hazard model for a binomial outcome for those who didn't have the symptom at the baseline 
 3. lnmxi: Linear mixed effect modeling of snp on intercept for the (continous) outcome
 4. lnmxs: Linear mixed effect modeling of snp on slope (time-dependent-change) of the outcome
-    
-In total, 52 models were analyzed for each variants.
+
 
 ## Visualized the strength of the associations
 
