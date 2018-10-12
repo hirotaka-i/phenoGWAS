@@ -176,7 +176,7 @@ for(i in 1:length(DATASETs)){
   ContTs_i_lt=rownames(temp2)[temp2[,1] > 0] # outcome observed more than twice
   ContTs_i_bl = setdiff(ContTs_i, rownames(temp2)[temp2[,1] > 0]) # outcome observed only once.
   if(length(ContTs_i_bl) != 0){ # if there are such variables..
-    cont_bl = cont %>% filter(TSTART == 0) %>% select(FID, IID, FATID, MATID, SEX, ContTs_i_bl) %>% left_join(., PC, by = "IID")
+    cont_bl = cont %>% filter(TSTART == 0) %>% select(FID, IID, FATID, MATID, SEX, ContTs_i_bl)
     write.table(cont_bl, paste("pheno/lnsgl/", DATASETs[i], ".txt", sep = ""), row.names = F, quote = F, sep = "\t")
     COVs_bl_i_cont = gsub("BLDfDIAG", "YEARfDIAG", COVs_bl_i) # replace BLDfDIAG -> YEARfDIAG
     cov_bl_cont = BL %>% select(FID, IID, FATID, MATID, SEX, COVs_bl_i_cont) %>% left_join(., PC, by = "IID")
